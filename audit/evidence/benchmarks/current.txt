@@ -1,0 +1,116 @@
+goos: windows
+goarch: amd64
+pkg: modbus-configurator
+cpu: 12th Gen Intel(R) Core(TM) i3-12100F
+BenchmarkLoadConfig-8   	  137128	     25906 ns/op	    8002 B/op	      95 allocs/op
+BenchmarkLoadConfig-8   	  111440	     27279 ns/op	    8002 B/op	      95 allocs/op
+BenchmarkLoadConfig-8   	  151975	     23233 ns/op	    8002 B/op	      95 allocs/op
+BenchmarkLoadConfig-8   	  156033	     23764 ns/op	    8002 B/op	      95 allocs/op
+BenchmarkLoadConfig-8   	  152122	     24165 ns/op	    8002 B/op	      95 allocs/op
+PASS
+ok  	modbus-configurator	18.845s
+goos: windows
+goarch: amd64
+pkg: modbus-configurator/api
+cpu: 12th Gen Intel(R) Core(TM) i3-12100F
+BenchmarkAPIStatusEndpoint-8   	--- FAIL: BenchmarkAPIStatusEndpoint-8
+    server_test.go:199: ╨₧╤ê╨╕╨▒╨║╨░ HTTP ╨╖╨░╨┐╤Ç╨╛╤ü╨░ ╨▓ ╨▒╨╡╨╜╤ç╨╝╨░╤Ç╨║╨╡: Get "http://127.0.0.1:38362/api/v1/status": dial tcp 127.0.0.1:38362: connectex: Only one usage of each socket address (protocol/network address/port) is normally permitted.
+BenchmarkAPIStatusEndpoint-8   	--- FAIL: BenchmarkAPIStatusEndpoint
+    server_test.go:199: ╨₧╤ê╨╕╨▒╨║╨░ HTTP ╨╖╨░╨┐╤Ç╨╛╤ü╨░ ╨▓ ╨▒╨╡╨╜╤ç╨╝╨░╤Ç╨║╨╡: Get "http://127.0.0.1:38362/api/v1/status": dial tcp 127.0.0.1:38362: connectex: Only one usage of each socket address (protocol/network address/port) is normally permitted.
+--- FAIL: BenchmarkAPIStatusEndpoint-8
+    server_test.go:199: ╨₧╤ê╨╕╨▒╨║╨░ HTTP ╨╖╨░╨┐╤Ç╨╛╤ü╨░ ╨▓ ╨▒╨╡╨╜╤ç╨╝╨░╤Ç╨║╨╡: Get "http://127.0.0.1:38362/api/v1/status": dial tcp 127.0.0.1:38362: connectex: Only one usage of each socket address (protocol/network address/port) is normally permitted.
+BenchmarkAPIStatusEndpoint-8   	--- FAIL: BenchmarkAPIStatusEndpoint
+    server_test.go:199: ╨₧╤ê╨╕╨▒╨║╨░ HTTP ╨╖╨░╨┐╤Ç╨╛╤ü╨░ ╨▓ ╨▒╨╡╨╜╤ç╨╝╨░╤Ç╨║╨╡: Get "http://127.0.0.1:38362/api/v1/status": dial tcp 127.0.0.1:38362: connectex: Only one usage of each socket address (protocol/network address/port) is normally permitted.
+--- FAIL: BenchmarkAPIStatusEndpoint-8
+    server_test.go:199: ╨₧╤ê╨╕╨▒╨║╨░ HTTP ╨╖╨░╨┐╤Ç╨╛╤ü╨░ ╨▓ ╨▒╨╡╨╜╤ç╨╝╨░╤Ç╨║╨╡: Get "http://127.0.0.1:38362/api/v1/status": dial tcp 127.0.0.1:38362: connectex: Only one usage of each socket address (protocol/network address/port) is normally permitted.
+BenchmarkAPIStatusEndpoint-8   	--- FAIL: BenchmarkAPIStatusEndpoint
+    server_test.go:199: ╨₧╤ê╨╕╨▒╨║╨░ HTTP ╨╖╨░╨┐╤Ç╨╛╤ü╨░ ╨▓ ╨▒╨╡╨╜╤ç╨╝╨░╤Ç╨║╨╡: Get "http://127.0.0.1:38362/api/v1/status": dial tcp 127.0.0.1:38362: connectex: Only one usage of each socket address (protocol/network address/port) is normally permitted.
+--- FAIL: BenchmarkAPIStatusEndpoint-8
+    server_test.go:199: ╨₧╤ê╨╕╨▒╨║╨░ HTTP ╨╖╨░╨┐╤Ç╨╛╤ü╨░ ╨▓ ╨▒╨╡╨╜╤ç╨╝╨░╤Ç╨║╨╡: Get "http://127.0.0.1:38362/api/v1/status": dial tcp 127.0.0.1:38362: connectex: Only one usage of each socket address (protocol/network address/port) is normally permitted.
+BenchmarkAPIStatusEndpoint-8   	--- FAIL: BenchmarkAPIStatusEndpoint
+    server_test.go:199: ╨₧╤ê╨╕╨▒╨║╨░ HTTP ╨╖╨░╨┐╤Ç╨╛╤ü╨░ ╨▓ ╨▒╨╡╨╜╤ç╨╝╨░╤Ç╨║╨╡: Get "http://127.0.0.1:38362/api/v1/status": dial tcp 127.0.0.1:38362: connectex: Only one usage of each socket address (protocol/network address/port) is normally permitted.
+--- FAIL: BenchmarkAPIStatusEndpoint-8
+    server_test.go:199: ╨₧╤ê╨╕╨▒╨║╨░ HTTP ╨╖╨░╨┐╤Ç╨╛╤ü╨░ ╨▓ ╨▒╨╡╨╜╤ç╨╝╨░╤Ç╨║╨╡: Get "http://127.0.0.1:38362/api/v1/status": dial tcp 127.0.0.1:38362: connectex: Only one usage of each socket address (protocol/network address/port) is normally permitted.
+FAIL
+exit status 1
+FAIL	modbus-configurator/api	0.142s
+?   	modbus-configurator/internal/testutil	[no test files]
+goos: windows
+goarch: amd64
+pkg: modbus-configurator/modbus
+cpu: 12th Gen Intel(R) Core(TM) i3-12100F
+BenchmarkValidateStepParams-8            	1000000000	         1.725 ns/op	       0 B/op	       0 allocs/op
+BenchmarkValidateStepParams-8            	1000000000	         1.687 ns/op	       0 B/op	       0 allocs/op
+BenchmarkValidateStepParams-8            	1000000000	         1.661 ns/op	       0 B/op	       0 allocs/op
+BenchmarkValidateStepParams-8            	1000000000	         1.745 ns/op	       0 B/op	       0 allocs/op
+BenchmarkValidateStepParams-8            	1000000000	         1.639 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStepParamsStructAllocations-8   	1000000000	         0.5778 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStepParamsStructAllocations-8   	1000000000	         0.5771 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStepParamsStructAllocations-8   	1000000000	         0.5851 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStepParamsStructAllocations-8   	1000000000	         0.5927 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStepParamsStructAllocations-8   	1000000000	         0.5923 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	modbus-configurator/modbus	12.576s
+?   	modbus-configurator/model	[no test files]
+2026/08/03 01:42:24 [ws] client connected (topics=[progress sensors reagent error log disconnect connect status], total=1)
+2026/08/03 01:42:24 [ws] client disconnected (total=0)
+goos: windows
+goarch: amd64
+pkg: modbus-configurator/ws
+cpu: 12th Gen Intel(R) Core(TM) i3-12100F
+BenchmarkHubBroadcast-8   	2026/08/03 01:42:24 [ws] client connected (topics=[progress sensors reagent error log disconnect connect status], total=1)
+2026/08/03 01:42:24 [ws] client disconnected (total=0)
+2026/08/03 01:42:24 [ws] client connected (topics=[connect status progress sensors reagent error log disconnect], total=1)
+2026/08/03 01:42:24 [ws] client disconnected (total=0)
+2026/08/03 01:42:24 [ws] client connected (topics=[sensors reagent error log disconnect connect status progress], total=1)
+2026/08/03 01:42:25 [ws] client disconnected (total=0)
+2026/08/03 01:42:25 [ws] client connected (topics=[connect status progress sensors reagent error log disconnect], total=1)
+2026/08/03 01:42:29 [ws] client disconnected (total=0)
+ 5595312	       710.0 ns/op	     290 B/op	       3 allocs/op
+BenchmarkHubBroadcast-8   	2026/08/03 01:42:29 [ws] client connected (topics=[disconnect connect status progress sensors reagent error log], total=1)
+2026/08/03 01:42:29 [ws] client disconnected (total=0)
+2026/08/03 01:42:29 [ws] client connected (topics=[connect status progress sensors reagent error log disconnect], total=1)
+2026/08/03 01:42:29 [ws] client disconnected (total=0)
+2026/08/03 01:42:29 [ws] client connected (topics=[disconnect connect status progress sensors reagent error log], total=1)
+2026/08/03 01:42:29 [ws] client disconnected (total=0)
+2026/08/03 01:42:29 [ws] client connected (topics=[disconnect connect status progress sensors reagent error log], total=1)
+2026/08/03 01:42:29 [ws] client disconnected (total=0)
+2026/08/03 01:42:29 [ws] client connected (topics=[reagent error log disconnect connect status progress sensors], total=1)
+2026/08/03 01:42:33 [ws] client disconnected (total=0)
+ 5227840	       712.4 ns/op	     290 B/op	       3 allocs/op
+BenchmarkHubBroadcast-8   	2026/08/03 01:42:33 [ws] client connected (topics=[disconnect connect status progress sensors reagent error log], total=1)
+2026/08/03 01:42:33 [ws] client disconnected (total=0)
+2026/08/03 01:42:33 [ws] client connected (topics=[connect status progress sensors reagent error log disconnect], total=1)
+2026/08/03 01:42:33 [ws] client disconnected (total=0)
+2026/08/03 01:42:33 [ws] client connected (topics=[connect status progress sensors reagent error log disconnect], total=1)
+2026/08/03 01:42:33 [ws] client disconnected (total=0)
+2026/08/03 01:42:33 [ws] client connected (topics=[connect status progress sensors reagent error log disconnect], total=1)
+2026/08/03 01:42:34 [ws] client disconnected (total=0)
+2026/08/03 01:42:34 [ws] client connected (topics=[log disconnect connect status progress sensors reagent error], total=1)
+2026/08/03 01:42:37 [ws] client disconnected (total=0)
+ 5507922	       648.3 ns/op	     288 B/op	       3 allocs/op
+BenchmarkHubBroadcast-8   	2026/08/03 01:42:37 [ws] client connected (topics=[connect status progress sensors reagent error log disconnect], total=1)
+2026/08/03 01:42:37 [ws] client disconnected (total=0)
+2026/08/03 01:42:37 [ws] client connected (topics=[disconnect connect status progress sensors reagent error log], total=1)
+2026/08/03 01:42:37 [ws] client disconnected (total=0)
+2026/08/03 01:42:37 [ws] client connected (topics=[connect status progress sensors reagent error log disconnect], total=1)
+2026/08/03 01:42:37 [ws] client disconnected (total=0)
+2026/08/03 01:42:37 [ws] client connected (topics=[progress sensors reagent error log disconnect connect status], total=1)
+2026/08/03 01:42:38 [ws] client disconnected (total=0)
+2026/08/03 01:42:38 [ws] client connected (topics=[status progress sensors reagent error log disconnect connect], total=1)
+2026/08/03 01:42:42 [ws] client disconnected (total=0)
+ 5477020	       682.4 ns/op	     290 B/op	       3 allocs/op
+BenchmarkHubBroadcast-8   	2026/08/03 01:42:42 [ws] client connected (topics=[status progress sensors reagent error log disconnect connect], total=1)
+2026/08/03 01:42:42 [ws] client disconnected (total=0)
+2026/08/03 01:42:42 [ws] client connected (topics=[log disconnect connect status progress sensors reagent error], total=1)
+2026/08/03 01:42:42 [ws] client disconnected (total=0)
+2026/08/03 01:42:42 [ws] client connected (topics=[status progress sensors reagent error log disconnect connect], total=1)
+2026/08/03 01:42:42 [ws] client disconnected (total=0)
+2026/08/03 01:42:42 [ws] client connected (topics=[sensors reagent error log disconnect connect status progress], total=1)
+2026/08/03 01:42:42 [ws] client disconnected (total=0)
+2026/08/03 01:42:42 [ws] client connected (topics=[log disconnect connect status progress sensors reagent error], total=1)
+2026/08/03 01:42:46 [ws] client disconnected (total=0)
+ 5154211	       681.6 ns/op	     290 B/op	       3 allocs/op
+PASS
+ok  	modbus-configurator/ws	22.052s
+FAIL

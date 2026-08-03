@@ -1,0 +1,27 @@
+# Binaries & Executables
+*.exe
+*.exe.test
+*.dll
+*.so
+*.dylib
+configurator/modbus-configurator.exe
+
+# Logs & Temporary Files
+*.log
+modbus-configurator.log
+
+# Profiling & Diagnostics Output
+*.pprof
+
+# Tooling & Local MCP Caches
+.playwright-mcp/
+
+# Go Test Artifacts & Coverage
+*.out
+*.coverprofile
+
+# OS Generated Files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+[Dd]esktop.ini

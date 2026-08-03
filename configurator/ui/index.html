@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ONEPAP.24 — Modbus Configurator</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+<!-- ===== SIDEBAR ===== -->
+<aside id="sidebar">
+  <div class="sb-brand">
+    <div class="sb-logo">◆</div>
+    <div class="sb-title">ONEPAP<span>.24</span></div>
+  </div>
+  <nav class="sb-nav">
+    <a class="sb-item active" data-tab="settings">
+      <span class="sb-icon">⚙</span> Настройки
+    </a>
+    <a class="sb-item" data-tab="valves">
+      <span class="sb-icon">🔀</span> Клапаны
+    </a>
+    <a class="sb-item" data-tab="programs">
+      <span class="sb-icon">▶</span> Программы
+    </a>
+    <a class="sb-item" data-tab="testing">
+      <span class="sb-icon">◉</span> Тестирование
+    </a>
+    <a class="sb-item" data-tab="diagnostics">
+      <span class="sb-icon">◷</span> Диагностика
+    </a>
+  </nav>
+  <div class="sb-footer">
+    <div class="sb-status-dot ok" id="sb-dot"></div>
+    <span id="sb-status-text">Не подключено</span>
+  </div>
+</aside>
+
+<!-- ===== MAIN ===== -->
+<main id="main">
+
+<!-- Top Bar -->
+<header class="topbar">
+  <div class="tb-left">
+    <span class="tb-breadcrumb">Конфигуратор</span>
+    <span class="tb-sep">/</span>
+    <span class="tb-page" id="tb-page">Настройки окраски</span>
+  </div>
+  <div class="tb-right">
+    <div class="tb-conn">
+      <input id="conn-port-inp" class="inp tb-inp" type="text" value="COM4" placeholder="Порт" title="COM-порт">
+      <input id="conn-baud-inp" class="inp tb-inp tb-inp-sm" type="number" value="115200" title="Baudrate">
+      <input id="conn-slave-inp" class="inp tb-inp tb-inp-xs" type="number" value="1" min="1" max="247" title="Slave ID">
+      <button id="btn-connect" class="btn btn-primary btn-sm">Подключить</button>
+      <button id="btn-disconnect" class="btn btn-ghost btn-sm">Откл</button>
+    </div>
+    <span class="tb-error" id="conn-error"></span>
+  </div>
+</header>
+
+<!-- KPI Row -->
+<div class="kpi-row" id="kpi-row">
+  <div class="kpi">
+    <div class="kpi-label">Состояние</div>
+    <div class="kpi-value" id="kpi-status">—</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Ready</div>
+    <div class="kpi-value mono" id="kpi-ready">—</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Ошибка</div>
+    <div class="kpi-value mono" id="kpi-error">—</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Шагов прочитано</div>
+    <div class="kpi-value" id="kpi-steps">0</div>
+  </div>
+</div>
+
+<!-- Global Progress Bar -->
+<div class="global-progress" id="global-progress" style="display:none">
+  <div class="gp-bar"><div class="gp-fill" id="gp-fill"></div></div>
+  <div class="gp-text" id="gp-text"></div>
+</div>
+
+<!-- Content Area -->
+<div class="content" id="content">
+
+  <!-- TAB: Settings -->
+  <section class="tab-panel active" id="tab-settings">
+    <div class="panel">
+      <div class="panel-hdr">
+        <span>Параметры окраски — Папаниколау (11 шагов)</span>
+        <div class="panel-acts">
+          <button id="btn-read-all" class="btn btn-primary btn-sm">Прочитать всё</button>
+          <button id="btn-write-all" class="btn btn-accent btn-sm">Сохранить</button>
+        </div>
+      </div>
+      <div class="panel-body p0">
+        <table class="tbl">
+          <thead><tr><th>#</th><th>Реагент</th><th>Экспозиция (сек)</th><th>Налив (мл×10)</th></tr></thead>
+          <tbody id="steps-tbody"></tbody>
+        </table>
+      </div>
+      <div class="panel-ft">
+        <label class="fld">Дельта детекции <input id="det-delta" class="inp inp-sm" type="number" min="0" max="255" value="10"></label>
+        <span class="tag" id="det-status">—</span>
+        <span class="ft-msg" id="settings-log"></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- TAB: Valves Settings -->
+  <section class="tab-panel" id="tab-valves">
+    <div class="panel">
+      <div class="panel-hdr">
+        <span>Настройки переключающих клапанов (Селектор 1 и Селектор 2)</span>
+        <div class="panel-acts">
+          <button id="btn-read-valves" class="btn btn-primary btn-sm">Прочитать все положения</button>
+          <button id="btn-write-valves" class="btn btn-accent btn-sm">Сохранить изменения</button>
+        </div>
+      </div>
+      <div class="panel-body p0">
+        <div class="valves-grid">
+          <!-- Table for Selector 1 -->
+          <div class="valve-table-wrap">
+            <div class="valve-table-hdr">Селектор 1 (Переключающий клапан 1)</div>
+            <table class="tbl">
+              <thead><tr><th>#</th><th>Позиция / Реагент</th><th>Координата (шаги)</th></tr></thead>
+              <tbody id="valves1-tbody"></tbody>
+            </table>
+          </div>
+          <!-- Table for Selector 2 -->
+          <div class="valve-table-wrap">
+            <div class="valve-table-hdr">Селектор 2 (Переключающий клапан 2)</div>
+            <table class="tbl">
+              <thead><tr><th>#</th><th>Позиция / Реагент</th><th>Координата (шаги)</th></tr></thead>
+              <tbody id="valves2-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="panel-ft">
+        <span class="ft-msg" id="valves-log"></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- TAB: Programs -->
+  <section class="tab-panel" id="tab-programs">
+    <!-- Селекторы (сервисный режим) -->
+    <div class="panel">
+      <div class="panel-hdr"><span>Селекторы — ручное переключение (сервис)</span></div>
+      <div class="panel-body">
+        <div class="sel-toggle-row">
+          <button id="sel-btn-1" class="btn btn-accent btn-sm sel-toggle active">Селектор 1</button>
+          <button id="sel-btn-2" class="btn btn-outline btn-sm sel-toggle">Селектор 2</button>
+          <span class="sel-active-label" id="sel-active-label">Селектор 1</span>
+        </div>
+        <div class="sel-hole-grid">
+          <button class="sel-hole-btn" data-hole="1">Спирт 96% <small>(1)</small></button>
+          <button class="sel-hole-btn" data-hole="2">Гематоксилин <small>(2)</small></button>
+          <button class="sel-hole-btn" data-hole="3">Вода <small>(3)</small></button>
+          <button class="sel-hole-btn" data-hole="4">Вода <small>(4)</small></button>
+          <button class="sel-hole-btn" data-hole="5">Спирт 87% <small>(5)</small></button>
+          <button class="sel-hole-btn" data-hole="6">OG-6 <small>(6)</small></button>
+          <button class="sel-hole-btn" data-hole="7">Спирт 96% <small>(7)</small></button>
+          <button class="sel-hole-btn" data-hole="8">EA-50 <small>(8)</small></button>
+          <button class="sel-hole-btn" data-hole="9">Спирт 87% <small>(9)</small></button>
+          <button class="sel-hole-btn" data-hole="10">Спирт 87% <small>(10)</small></button>
+          <button class="sel-hole-btn" data-hole="11">Спирт 96% <small>(11)</small></button>
+          <button class="sel-hole-btn" data-hole="12">Хлорка <small>(12)</small></button>
+          <button class="sel-hole-btn" data-hole="13">Хлорка <small>(13)</small></button>
+          <button class="sel-hole-btn" data-hole="14">Вода <small>(14)</small></button>
+        </div>
+        <div class="sel-status" id="sel-status">Текущая позиция: отверстие 1 | датчик: вход 9</div>
+        <div class="sel-calibrate-row">
+          <button id="btn-calibrate-sel" class="btn btn-outline btn-sm">⟲ Обнулить селектор 1</button>
+          <button id="btn-reset-plc" class="btn btn-danger btn-sm">⟳ Сброс PLC</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-hdr"><span>Запуск программ</span></div>
+      <div class="panel-body">
+        <div class="prog-grid" id="prog-grid">
+          <div class="prog-card">
+            <div class="prog-name">Проверка системы</div>
+            <div class="prog-desc">Калибровка клапана, селектора, ротора, слив</div>
+            <button class="btn btn-outline btn-sm prog-btn" data-prog="system-check">▶ Запустить</button>
+          </div>
+          <div class="prog-card">
+            <div class="prog-name">Загрузка образцов</div>
+            <div class="prog-desc">Подача материала в ротор</div>
+            <button class="btn btn-outline btn-sm prog-btn" data-prog="load">▶ Запустить</button>
+          </div>
+          <div class="prog-card">
+            <div class="prog-name">Осаждение</div>
+            <div class="prog-desc">Цикл осаждения (300 с)</div>
+            <button class="btn btn-outline btn-sm prog-btn" data-prog="sedimentation">▶ Запустить</button>
+          </div>
+          <div class="prog-card prog-card-accent">
+            <div class="prog-name">Цикл окраски</div>
+            <div class="prog-desc">11 шагов Папаниколау</div>
+            <div class="prog-btns">
+              <button class="btn btn-primary btn-sm prog-btn" data-prog="stain-start">▶ Запустить</button>
+              <button class="btn btn-ghost btn-sm prog-btn" data-prog="stain-pause">⏸</button>
+              <button class="btn btn-ghost btn-sm prog-btn" data-prog="stain-resume">▶</button>
+              <button class="btn btn-danger btn-sm prog-btn" data-prog="stain-stop">■ Стоп</button>
+            </div>
+          </div>
+          <div class="prog-card">
+            <div class="prog-name">Промывка системы</div>
+            <div class="prog-desc">4 шага: хлорка ×2, вода ×2</div>
+            <button class="btn btn-outline btn-sm prog-btn" data-prog="wash-start">▶ Запустить</button>
+          </div>
+          <div class="prog-card">
+            <div class="prog-name">Полный цикл</div>
+            <div class="prog-desc">Проверка → загрузка → осаждение → окраска → промывка</div>
+            <button class="btn btn-outline btn-sm prog-btn" data-prog="full-start">▶ Запустить</button>
+          </div>
+        </div>
+        <div class="progress-wrap" id="progress-wrap" style="display:none">
+          <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+          <div class="progress-text" id="progress-text"></div>
+        </div>
+        <div class="mt16">
+          <button id="btn-emergency" class="btn btn-danger">■ АВАРИЙНЫЙ СТОП</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TAB: Testing -->
+  <section class="tab-panel" id="tab-testing">
+    <div class="panel">
+      <div class="panel-hdr"><span>Датчики</span><button id="btn-read-sensors" class="btn btn-outline btn-sm">Обновить</button></div>
+      <div class="panel-body">
+        <div class="sensor-grid" id="sensor-grid"></div>
+        <div class="sensor-extra">
+          <div class="sens-metric"><span>МК</span><strong id="s-mcu">—</strong><small>°C</small></div>
+          <div class="sens-metric"><span>NTC</span><strong id="s-ntc">—</strong><small>°C</small></div>
+          <div class="sens-metric"><span>HX711</span><strong id="s-hx711">—</strong><small>raw</small></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TAB: Diagnostics -->
+  <section class="tab-panel" id="tab-diagnostics">
+    <div class="grid-2col">
+      <div class="panel">
+        <div class="panel-hdr"><span>Последняя ошибка</span><button id="btn-clear-error" class="btn btn-outline btn-sm">Сбросить</button></div>
+        <div class="panel-body"><pre class="diag-val" id="diag-error">—</pre></div>
+      </div>
+      <div class="panel">
+        <div class="panel-hdr"><span>Журнал</span><button id="btn-clear-log" class="btn btn-outline btn-sm">Очистить</button></div>
+        <div class="panel-body p0">
+          <div class="log-container" id="log-container"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div><!-- /content -->
+</main>
+</div><!-- /app -->
+
+<!-- Reagent Low Modal -->
+<div id="reagent-modal" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-title">⚠️ Закончился реагент</div>
+    <div class="modal-body" id="reagent-modal-msg"></div>
+    <div class="modal-actions">
+      <button id="btn-reagent-replace" class="btn btn-accent">Заменить и продолжить</button>
+      <button id="btn-reagent-cancel" class="btn btn-danger">Отменить цикл</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

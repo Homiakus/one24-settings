@@ -1,0 +1,43 @@
+project:
+  name: "modbus-configurator"
+  repository: "ONEPAP.24/12_Electronics/settings-modbus"
+  commit: "local-baseline"
+  go_version: "go1.26.0"
+  target_os:
+    - windows
+    - linux
+  target_arch:
+    - amd64
+  public_api_stability_required: true
+
+performance:
+  operation_counts:
+    - 1000
+    - 100000
+    - 1000000
+  percentiles:
+    - 50
+    - 90
+    - 95
+    - 98
+    - 99
+  benchmark_count: 10
+  benchmark_time: 5s
+  regression_threshold_percent: 5
+  allocation_regression_threshold_percent: 3
+
+quality_gates:
+  go_test_required: true
+  race_required: true
+  vet_required: true
+  staticcheck_required: true
+  fuzz_required: true
+  benchmark_required: true
+  allocation_analysis_required: true
+  regression_tests_required: true
+
+severity_policy:
+  critical_must_be_zero: true
+  high_must_be_zero: true
+  medium_allowed: 0
+  low_allowed: 10
