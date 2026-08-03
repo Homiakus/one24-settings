@@ -10,5 +10,3 @@ require (
 )
 
 require github.com/goburrow/serial v0.1.0 // indirect
-
-replace github.com/goburrow/serial => ../../../11_Software/Main-v6/third_party/goburrow-serial

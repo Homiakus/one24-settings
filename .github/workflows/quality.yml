@@ -1,0 +1,82 @@
+name: quality
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Go tests and static checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: configurator
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: configurator/go.mod
+          cache-dependency-path: configurator/go.sum
+      - name: Download modules
+        run: go mod download
+      - name: Format changed Go files
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            base="${{ github.event.pull_request.base.sha }}"
+          else
+            base="${{ github.event.before }}"
+          fi
+
+          if [[ -z "$base" || "$base" =~ ^0+$ ]]; then
+            base="HEAD^"
+          fi
+
+          mapfile -t files < <(
+            git diff --name-only --diff-filter=ACM "$base" "$GITHUB_SHA" -- '*.go' \
+              | sed -n 's#^configurator/##p'
+          )
+
+          if (( ${#files[@]} == 0 )); then
+            echo "No changed Go files to format-check."
+            exit 0
+          fi
+
+          unformatted="$(gofmt -l "${files[@]}")"
+          if [[ -n "$unformatted" ]]; then
+            echo "The following changed Go files are not gofmt-formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+      - name: Vet
+        run: go vet ./...
+      - name: Tests
+        run: go test ./... -race -count=1
+
+  windows-build:
+    name: Windows build
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: configurator
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: configurator/go.mod
+          cache-dependency-path: configurator/go.sum
+      - name: Download modules
+        run: go mod download
+      - name: Build configurator
+        run: go build -trimpath -o ../artifacts/modbus-configurator.exe .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: modbus-configurator-windows
+          path: artifacts/modbus-configurator.exe
+          if-no-files-found: error
