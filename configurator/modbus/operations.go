@@ -487,43 +487,10 @@ func (c *Client) WriteSelectorPositionParams(p model.SelectorPosition) error {
 	return nil
 }
 
-// ReadAllValvePositions читает циклом все 15 положений для обоих селекторов.
+// ReadAllValvePositions читает все 15 положений для обоих селекторов
+// оптимизированным атомарным проходом.
 func (c *Client) ReadAllValvePositions(progress ProgressFunc) ([]model.SelectorPosition, []model.SelectorPosition, error) {
-	if _, err := c.ReadRegister(RegReadyStatus); err != nil {
-		return nil, nil, fmt.Errorf("контроллер не отвечает (reg 1): %w", err)
-	}
-
-	sel1 := make([]model.SelectorPosition, 0, 15)
-	sel2 := make([]model.SelectorPosition, 0, 15)
-
-	total := 30
-	current := 0
-
-	for hole := 0; hole <= 14; hole++ {
-		current++
-		if progress != nil {
-			progress(current, total, fmt.Sprintf("Чтение Клапан 1, отв. %d/14", hole))
-		}
-		pos, err := c.ReadSelectorPositionParams(1, hole)
-		if err != nil {
-			return nil, nil, fmt.Errorf("клапан 1 отв %d: %w", hole, err)
-		}
-		sel1 = append(sel1, pos)
-	}
-
-	for hole := 0; hole <= 14; hole++ {
-		current++
-		if progress != nil {
-			progress(current, total, fmt.Sprintf("Чтение Клапан 2, отв. %d/14", hole))
-		}
-		pos, err := c.ReadSelectorPositionParams(2, hole)
-		if err != nil {
-			return nil, nil, fmt.Errorf("клапан 2 отв %d: %w", hole, err)
-		}
-		sel2 = append(sel2, pos)
-	}
-
-	return sel1, sel2, nil
+	return c.readAllValvePositionsFast(progress)
 }
 
 // WriteAllValvePositions записывает циклом все положения для селектора 1 и 2.
@@ -564,4 +531,3 @@ func (c *Client) WriteAllValvePositions(sel1, sel2 []model.SelectorPosition, pro
 
 	return written, nil
 }
-
