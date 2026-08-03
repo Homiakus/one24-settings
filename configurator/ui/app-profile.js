@@ -2,213 +2,326 @@
 
 (() => {
   const O = window.ONE24;
-  const FORMAT = 'onepap24-settings';
+  const SCHEMA = 'onepap24-settings';
   const VERSION = 1;
   const MAX_FILE_SIZE = 1024 * 1024;
+  let initialized = false;
 
-  function buildProfile() {
-    return {
-      format: FORMAT,
-      version: VERSION,
-      exported_at: new Date().toISOString(),
-      application: 'ONEPAP.24 Modbus Configurator',
-      connection: {
-        port: String(O.$('#conn-port-inp').value || '').trim(),
-        baudrate: Number(O.$('#conn-baud-inp').value),
-        slave_id: Number(O.$('#conn-slave-inp').value)
-      },
-      steps: O.state.steps.map((step) => ({
-        id: Number(step.id),
-        name: String(step.name || ''),
-        exposure_time: Number(step.exposure_time),
-        fill_volume: Number(step.fill_volume)
-      })),
-      detection: {
-        reagent_empty_delta: Number(O.state.detection.reagent_empty_delta)
-      },
-      selectors: {
-        selector_1: O.state.valves1.map((item) => ({ hole: Number(item.hole), name: String(item.name || ''), coord: Number(item.coord) })),
-        selector_2: O.state.valves2.map((item) => ({ hole: Number(item.hole), name: String(item.name || ''), coord: Number(item.coord) }))
+  const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+  const ownKeys = (value) => Object.keys(value || {});
+
+  function assertAllowedKeys(value, allowed, path) {
+    const unknown = ownKeys(value).filter((key) => !allowed.includes(key));
+    if (unknown.length) throw new Error(`${path}: неизвестные поля: ${unknown.join(', ')}`);
+  }
+
+  function integer(value, min, max, path) {
+    if (!Number.isInteger(value) || value < min || value > max) {
+      throw new Error(`${path}: требуется целое число ${min}–${max}`);
+    }
+    return value;
+  }
+
+  function text(value, path, maxLength = 120) {
+    if (typeof value !== 'string' || !value.trim() || value.length > maxLength) {
+      throw new Error(`${path}: требуется непустая строка длиной до ${maxLength} символов`);
+    }
+    return value.trim();
+  }
+
+  function normalizeSteps(items) {
+    if (!Array.isArray(items) || items.length !== 11) {
+      throw new Error('staining.steps: требуется ровно 11 шагов');
+    }
+    const seen = new Set();
+    const result = items.map((item, index) => {
+      if (!isObject(item)) throw new Error(`staining.steps[${index}]: требуется объект`);
+      assertAllowedKeys(item, ['id', 'name', 'exposure_time', 'fill_volume'], `staining.steps[${index}]`);
+      const id = integer(item.id, 1, 11, `staining.steps[${index}].id`);
+      if (seen.has(id)) throw new Error(`staining.steps: повторяется id ${id}`);
+      seen.add(id);
+      return {
+        id,
+        name: text(item.name, `staining.steps[${index}].name`),
+        exposure_time: integer(item.exposure_time, 1, 600, `staining.steps[${index}].exposure_time`),
+        fill_volume: integer(item.fill_volume, 1, 6000, `staining.steps[${index}].fill_volume`)
+      };
+    });
+    return result.sort((a, b) => a.id - b.id);
+  }
+
+  function normalizeSelector(items, selector) {
+    if (!Array.isArray(items) || items.length !== 15) {
+      throw new Error(`selectors.selector${selector}: требуется ровно 15 позиций`);
+    }
+    const seen = new Set();
+    const result = items.map((item, index) => {
+      const path = `selectors.selector${selector}[${index}]`;
+      if (!isObject(item)) throw new Error(`${path}: требуется объект`);
+      assertAllowedKeys(item, ['selector', 'hole', 'name', 'coord'], path);
+      if (integer(item.selector, 1, 2, `${path}.selector`) !== selector) {
+        throw new Error(`${path}.selector: ожидалось значение ${selector}`);
       }
+      const hole = integer(item.hole, 0, 14, `${path}.hole`);
+      if (seen.has(hole)) throw new Error(`selectors.selector${selector}: повторяется позиция ${hole}`);
+      seen.add(hole);
+      return {
+        selector,
+        hole,
+        name: text(item.name, `${path}.name`),
+        coord: integer(item.coord, 0, 65535, `${path}.coord`)
+      };
+    });
+    return result.sort((a, b) => a.hole - b.hole);
+  }
+
+  function normalizeProfile(raw) {
+    if (!isObject(raw)) throw new Error('Корень JSON должен быть объектом');
+    assertAllowedKeys(raw, ['schema', 'schema_version', 'exported_at', 'application', 'device', 'staining', 'selectors'], 'profile');
+    if (raw.schema !== SCHEMA) throw new Error(`schema: ожидалось "${SCHEMA}"`);
+    if (raw.schema_version !== VERSION) throw new Error(`schema_version: поддерживается только версия ${VERSION}`);
+
+    if (raw.exported_at !== undefined && Number.isNaN(Date.parse(raw.exported_at))) {
+      throw new Error('exported_at: некорректная дата');
+    }
+    if (raw.application !== undefined) {
+      if (!isObject(raw.application)) throw new Error('application: требуется объект');
+      assertAllowedKeys(raw.application, ['name', 'version'], 'application');
+      if (raw.application.name !== undefined) text(raw.application.name, 'application.name', 120);
+      if (raw.application.version !== undefined) text(raw.application.version, 'application.version', 40);
+    }
+
+    if (!isObject(raw.device)) throw new Error('device: требуется объект');
+    assertAllowedKeys(raw.device, ['port', 'baudrate', 'slave_id'], 'device');
+    const device = {
+      port: text(raw.device.port, 'device.port', 128),
+      baudrate: integer(raw.device.baudrate, 1200, 4000000, 'device.baudrate'),
+      slave_id: integer(raw.device.slave_id, 1, 247, 'device.slave_id')
+    };
+
+    if (!isObject(raw.staining)) throw new Error('staining: требуется объект');
+    assertAllowedKeys(raw.staining, ['protocol', 'reagent_empty_delta', 'steps'], 'staining');
+    if (raw.staining.protocol !== 'pap_stain') throw new Error('staining.protocol: поддерживается только "pap_stain"');
+    const staining = {
+      protocol: 'pap_stain',
+      reagent_empty_delta: integer(raw.staining.reagent_empty_delta, 0, 255, 'staining.reagent_empty_delta'),
+      steps: normalizeSteps(raw.staining.steps)
+    };
+
+    if (!isObject(raw.selectors)) throw new Error('selectors: требуется объект');
+    assertAllowedKeys(raw.selectors, ['selector1', 'selector2'], 'selectors');
+    const selectors = {
+      selector1: normalizeSelector(raw.selectors.selector1, 1),
+      selector2: normalizeSelector(raw.selectors.selector2, 2)
+    };
+
+    return {
+      schema: SCHEMA,
+      schema_version: VERSION,
+      exported_at: raw.exported_at || new Date().toISOString(),
+      application: { name: 'ONEPAP.24 Modbus Configurator', version: '1' },
+      device,
+      staining,
+      selectors
     };
   }
 
-  function assertInteger(value, min, max, path) {
-    if (!Number.isInteger(value) || value < min || value > max) {
-      throw new Error(`${path}: ожидается целое число ${min}–${max}`);
-    }
-  }
-
-  function validateUnique(items, key, min, max, path) {
-    const seen = new Set();
-    items.forEach((item, index) => {
-      const value = Number(item?.[key]);
-      assertInteger(value, min, max, `${path}[${index}].${key}`);
-      if (seen.has(value)) throw new Error(`${path}: повторяется ${key}=${value}`);
-      seen.add(value);
+  function buildProfile() {
+    return normalizeProfile({
+      schema: SCHEMA,
+      schema_version: VERSION,
+      exported_at: new Date().toISOString(),
+      application: { name: 'ONEPAP.24 Modbus Configurator', version: '1' },
+      device: {
+        port: O.$('#conn-port-inp').value.trim() || 'COM4',
+        baudrate: Number(O.$('#conn-baud-inp').value),
+        slave_id: Number(O.$('#conn-slave-inp').value)
+      },
+      staining: {
+        protocol: 'pap_stain',
+        reagent_empty_delta: Number(O.state.detection.reagent_empty_delta),
+        steps: O.state.steps.map((step) => ({
+          id: Number(step.id),
+          name: String(step.name),
+          exposure_time: Number(step.exposure_time),
+          fill_volume: Number(step.fill_volume)
+        }))
+      },
+      selectors: {
+        selector1: O.state.valves1.map((item) => ({ selector: 1, hole: Number(item.hole), name: String(item.name), coord: Number(item.coord) })),
+        selector2: O.state.valves2.map((item) => ({ selector: 2, hole: Number(item.hole), name: String(item.name), coord: Number(item.coord) }))
+      }
     });
-  }
-
-  function validateProfile(profile) {
-    if (!profile || typeof profile !== 'object' || Array.isArray(profile)) throw new Error('Корневой элемент должен быть JSON-объектом');
-    if (profile.format !== FORMAT) throw new Error(`Неверный format: ожидается "${FORMAT}"`);
-    if (profile.version !== VERSION) throw new Error(`Версия ${profile.version} не поддерживается; ожидается ${VERSION}`);
-
-    const connection = profile.connection;
-    if (!connection || typeof connection.port !== 'string' || !connection.port.trim()) throw new Error('connection.port не должен быть пустым');
-    assertInteger(Number(connection.baudrate), 1200, 4000000, 'connection.baudrate');
-    assertInteger(Number(connection.slave_id), 1, 247, 'connection.slave_id');
-
-    if (!Array.isArray(profile.steps) || profile.steps.length !== 11) throw new Error('steps должен содержать ровно 11 шагов');
-    validateUnique(profile.steps, 'id', 1, 11, 'steps');
-    profile.steps.forEach((step, index) => {
-      assertInteger(Number(step.exposure_time), 1, 600, `steps[${index}].exposure_time`);
-      assertInteger(Number(step.fill_volume), 1, 6000, `steps[${index}].fill_volume`);
-    });
-
-    assertInteger(Number(profile.detection?.reagent_empty_delta), 0, 255, 'detection.reagent_empty_delta');
-    validateSelector(profile.selectors?.selector_1, 'selectors.selector_1');
-    validateSelector(profile.selectors?.selector_2, 'selectors.selector_2');
-    return profile;
-  }
-
-  function validateSelector(items, path) {
-    if (!Array.isArray(items) || items.length !== 15) throw new Error(`${path} должен содержать ровно 15 позиций`);
-    validateUnique(items, 'hole', 0, 14, path);
-    items.forEach((item, index) => assertInteger(Number(item.coord), 0, 65535, `${path}[${index}].coord`));
   }
 
   function countChanges(profile) {
     const currentSteps = new Map(O.state.steps.map((item) => [Number(item.id), item]));
-    const current1 = new Map(O.state.valves1.map((item) => [Number(item.hole), item]));
-    const current2 = new Map(O.state.valves2.map((item) => [Number(item.hole), item]));
-    const steps = profile.steps.filter((item) => {
-      const current = currentSteps.get(Number(item.id));
-      return !current || current.exposure_time !== Number(item.exposure_time) || current.fill_volume !== Number(item.fill_volume);
+    const currentValves = new Map([...O.state.valves1, ...O.state.valves2].map((item) => [`${item.selector}:${item.hole}`, item]));
+    const steps = profile.staining.steps.filter((item) => {
+      const current = currentSteps.get(item.id);
+      return !current || Number(current.exposure_time) !== item.exposure_time || Number(current.fill_volume) !== item.fill_volume;
     }).length;
-    const selector1 = profile.selectors.selector_1.filter((item) => current1.get(Number(item.hole))?.coord !== Number(item.coord)).length;
-    const selector2 = profile.selectors.selector_2.filter((item) => current2.get(Number(item.hole))?.coord !== Number(item.coord)).length;
-    const detection = Number(profile.detection.reagent_empty_delta) !== Number(O.state.detection.reagent_empty_delta);
-    const connection = String(profile.connection.port).trim() !== String(O.$('#conn-port-inp').value).trim() ||
-      Number(profile.connection.baudrate) !== Number(O.$('#conn-baud-inp').value) ||
-      Number(profile.connection.slave_id) !== Number(O.$('#conn-slave-inp').value);
-    return { steps, valves: selector1 + selector2, detection, connection };
+    const valves = [...profile.selectors.selector1, ...profile.selectors.selector2].filter((item) => {
+      const current = currentValves.get(`${item.selector}:${item.hole}`);
+      return !current || Number(current.coord) !== item.coord;
+    }).length;
+    const detection = Number(O.state.detection.reagent_empty_delta) !== profile.staining.reagent_empty_delta;
+    const device = O.$('#conn-port-inp').value.trim() !== profile.device.port
+      || Number(O.$('#conn-baud-inp').value) !== profile.device.baudrate
+      || Number(O.$('#conn-slave-inp').value) !== profile.device.slave_id;
+    return { steps, valves, detection, device };
   }
 
-  function setInput(input, value) {
+  function dispatchNumberInput(selector, rowIndex, inputIndex, value) {
+    const row = O.$$(selector)[rowIndex];
+    if (!row) throw new Error(`Не найдена строка ${rowIndex + 1} в интерфейсе`);
+    const input = row.querySelectorAll('input')[inputIndex];
+    if (!input) throw new Error(`Не найдено поле ${inputIndex + 1} в строке ${rowIndex + 1}`);
+    if (Number(input.value) === value) return;
     input.value = String(value);
     input.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
   function applyProfile(profile) {
-    O.$('#conn-port-inp').value = String(profile.connection.port).trim();
-    O.$('#conn-baud-inp').value = String(profile.connection.baudrate);
-    O.$('#conn-slave-inp').value = String(profile.connection.slave_id);
-
-    const steps = new Map(profile.steps.map((item) => [Number(item.id), item]));
-    O.$$('#steps-tbody tr').forEach((row) => {
-      const id = Number(row.cells[0]?.textContent);
-      const item = steps.get(id);
-      const inputs = row.querySelectorAll('input');
-      if (item && inputs.length >= 2) {
-        setInput(inputs[0], item.exposure_time);
-        setInput(inputs[1], item.fill_volume);
-      }
+    profile.staining.steps.forEach((step, index) => {
+      dispatchNumberInput('#steps-tbody tr', index, 0, step.exposure_time);
+      dispatchNumberInput('#steps-tbody tr', index, 1, step.fill_volume);
     });
-    setInput(O.$('#det-delta'), profile.detection.reagent_empty_delta);
 
-    applySelectorRows('#valves1-tbody', profile.selectors.selector_1);
-    applySelectorRows('#valves2-tbody', profile.selectors.selector_2);
-    O.text('#settings-source', `Загружен JSON-профиль ${new Date().toLocaleTimeString()}. Значения ещё не записаны в контроллер.`);
+    const delta = O.$('#det-delta');
+    if (Number(delta.value) !== profile.staining.reagent_empty_delta) {
+      delta.value = String(profile.staining.reagent_empty_delta);
+      delta.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    profile.selectors.selector1.forEach((item, index) => dispatchNumberInput('#valves1-tbody tr', index, 0, item.coord));
+    profile.selectors.selector2.forEach((item, index) => dispatchNumberInput('#valves2-tbody tr', index, 0, item.coord));
+
+    if (!O.state.connected) {
+      O.$('#conn-port-inp').value = profile.device.port;
+      O.$('#conn-baud-inp').value = String(profile.device.baudrate);
+      O.$('#conn-slave-inp').value = String(profile.device.slave_id);
+      O.renderConnection();
+    }
+
+    const importedAt = new Date().toLocaleTimeString();
+    O.text('#settings-source', `Импортирован JSON-профиль ${importedAt}. Перед записью проверьте изменённые строки.`);
+    O.text('#data-freshness', `Профиль: ${importedAt}`);
   }
 
-  function applySelectorRows(selector, positions) {
-    const byHole = new Map(positions.map((item) => [Number(item.hole), item]));
-    O.$$(`${selector} tr`).forEach((row) => {
-      const hole = Number(row.cells[0]?.textContent);
-      const item = byHole.get(hole);
-      const input = row.querySelector('input');
-      if (item && input) setInput(input, item.coord);
-    });
+  function downloadProfile(profile) {
+    const data = `${JSON.stringify(profile, null, 2)}\n`;
+    const blob = new Blob([data], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `onepap24-settings-${timestamp}.json`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
-  function downloadProfile() {
+  async function exportProfile() {
     try {
-      const json = JSON.stringify(buildProfile(), null, 2) + '\n';
-      const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
-      const link = document.createElement('a');
-      const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '-');
-      link.href = URL.createObjectURL(blob);
-      link.download = `onepap24-settings-${stamp}.json`;
-      document.body.append(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(link.href);
-      O.toast('JSON-профиль экспортирован.', 'ok');
-      O.message('#profile-log', 'Экспортирован текущий профиль интерфейса.', 'ok');
+      const profile = buildProfile();
+      downloadProfile(profile);
+      O.message('#profile-log', 'JSON-профиль экспортирован. В файл вошли текущие значения интерфейса.', 'ok');
+      O.toast('Настройки экспортированы в JSON.', 'ok');
     } catch (error) {
+      O.message('#profile-log', error.message, 'error');
       O.toast(`Экспорт не выполнен: ${error.message}`, 'error');
     }
   }
 
-  async function importFile(file) {
+  async function importProfile(file) {
     if (!file) return;
     if (file.size > MAX_FILE_SIZE) throw new Error('Файл больше 1 МБ');
-    const text = await file.text();
-    let profile;
-    try { profile = JSON.parse(text); }
-    catch (error) { throw new Error(`Ошибка синтаксиса JSON: ${error.message}`); }
-    validateProfile(profile);
+    const raw = JSON.parse(await file.text());
+    const profile = normalizeProfile(raw);
     const changes = countChanges(profile);
-    const total = changes.steps + changes.valves + Number(changes.detection) + Number(changes.connection);
-    const description = total
-      ? `Шаги: ${changes.steps}; координаты: ${changes.valves}; порог: ${changes.detection ? 'изменится' : 'без изменений'}; подключение: ${changes.connection ? 'изменится' : 'без изменений'}.`
-      : 'Файл совпадает с текущими значениями.';
-    if (!await O.confirm('Импортировать JSON-профиль?', `${description} Импорт только подготовит изменения и ничего не запишет в контроллер.`, 'Импортировать')) return;
+    const total = changes.steps + changes.valves + (changes.detection ? 1 : 0);
+    const deviceNote = changes.device
+      ? (O.state.connected ? ' Параметры подключения не будут менять активное соединение.' : ' Параметры подключения будут подставлены в форму.')
+      : '';
+    const accepted = await O.confirm(
+      'Импортировать JSON-профиль?',
+      `Файл корректен: 11 шагов, 30 координат. Изменится параметров: ${total}.${deviceNote} Данные не будут записаны в PLC автоматически.`,
+      'Импортировать'
+    );
+    if (!accepted) return;
     applyProfile(profile);
-    O.message('#profile-log', total ? `Профиль импортирован. Подготовлено изменений: ${total}.` : 'Профиль импортирован, отличий нет.', total ? 'ok' : '');
-    O.toast(total ? 'Профиль загружен. Проверьте и запишите изменения.' : 'Профиль совпадает с текущими настройками.', 'ok');
+    O.message('#profile-log', `Профиль импортирован: шагов ${changes.steps}, координат ${changes.valves}${changes.detection ? ', порог детекции изменён' : ''}.`, 'ok');
+    O.toast('Профиль импортирован. Проверьте изменения и запишите их в контроллер.', 'ok');
   }
 
-  function mount() {
+  function createUI() {
+    if (initialized) return;
+    initialized = true;
     const actions = O.$('#tab-settings .page-actions');
-    if (!actions || O.$('#btn-profile-export')) return;
-
-    const exportButton = document.createElement('button');
-    exportButton.id = 'btn-profile-export';
-    exportButton.className = 'btn btn-secondary';
-    exportButton.type = 'button';
-    exportButton.textContent = 'Экспорт JSON';
-    exportButton.onclick = downloadProfile;
+    const intro = O.$('#tab-settings .page-intro');
+    if (!actions || !intro) return;
 
     const importButton = document.createElement('button');
-    importButton.id = 'btn-profile-import';
-    importButton.className = 'btn btn-secondary';
+    importButton.id = 'btn-import-profile';
     importButton.type = 'button';
+    importButton.className = 'btn btn-secondary';
     importButton.textContent = 'Импорт JSON';
 
+    const exportButton = document.createElement('button');
+    exportButton.id = 'btn-export-profile';
+    exportButton.type = 'button';
+    exportButton.className = 'btn btn-secondary';
+    exportButton.textContent = 'Экспорт JSON';
+
     const input = document.createElement('input');
-    input.id = 'profile-file-input';
+    input.id = 'profile-file';
     input.type = 'file';
     input.accept = 'application/json,.json';
     input.hidden = true;
+
+    const status = document.createElement('p');
+    status.id = 'profile-log';
+    status.className = 'operation-message standalone-message';
+    status.setAttribute('role', 'status');
+
+    actions.prepend(exportButton);
+    actions.prepend(importButton);
+    intro.after(status);
+    document.body.append(input);
+
     importButton.onclick = () => input.click();
+    exportButton.onclick = exportProfile;
     input.onchange = async () => {
-      try { await importFile(input.files?.[0]); }
-      catch (error) { O.message('#profile-log', error.message, 'error'); O.toast(`Импорт не выполнен: ${error.message}`, 'error'); }
-      finally { input.value = ''; }
+      const file = input.files?.[0];
+      input.value = '';
+      try {
+        await importProfile(file);
+      } catch (error) {
+        const message = error instanceof SyntaxError ? 'Файл содержит некорректный JSON' : error.message;
+        O.message('#profile-log', message, 'error');
+        O.toast(`Импорт не выполнен: ${message}`, 'error');
+      }
     };
-
-    const log = document.createElement('span');
-    log.id = 'profile-log';
-    log.className = 'operation-message';
-    log.setAttribute('role', 'status');
-
-    actions.prepend(importButton, exportButton, input);
-    const panel = O.$('#tab-settings .work-panel');
-    panel?.insertAdjacentElement('beforebegin', log);
   }
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount, { once: true });
-  else mount();
+  async function boot() {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      if (Array.isArray(O.state.steps) && O.state.steps.length === 11
+        && Array.isArray(O.state.valves1) && O.state.valves1.length === 15
+        && Array.isArray(O.state.valves2) && O.state.valves2.length === 15) {
+        createUI();
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    O.toast('Модуль JSON-профилей не инициализирован.', 'error');
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot, { once: true });
+  } else {
+    boot();
+  }
 })();
