@@ -1,0 +1,53 @@
+name: quality
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Go tests and static checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: configurator
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: configurator/go.mod
+          cache-dependency-path: configurator/go.sum
+      - name: Download modules
+        run: go mod download
+      - name: Format check
+        run: test -z "$(gofmt -l .)"
+      - name: Vet
+        run: go vet ./...
+      - name: Tests
+        run: go test ./... -race -count=1
+
+  windows-build:
+    name: Windows build
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: configurator
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: configurator/go.mod
+          cache-dependency-path: configurator/go.sum
+      - name: Download modules
+        run: go mod download
+      - name: Build configurator
+        run: go build -trimpath -o ../artifacts/modbus-configurator.exe .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: modbus-configurator-windows
+          path: artifacts/modbus-configurator.exe
+          if-no-files-found: error
