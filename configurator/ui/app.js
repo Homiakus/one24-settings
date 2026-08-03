@@ -11,6 +11,7 @@
     $$: (s) => [...document.querySelectorAll(s)]
   };
   let ws;
+  void import('./app-profile.js');
 
   O.text = (selector, value) => { const element = O.$(selector); if (element) element.textContent = value; };
   O.request = async (path, { method = 'GET', body, timeout = 20000 } = {}) => {
