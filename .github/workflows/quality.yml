@@ -87,6 +87,15 @@ jobs:
             exit 1
           }
           pwsh -NoLogo -NoProfile -File .\onepap.ps1 help
+      - name: Validate UI JavaScript
+        run: |
+          node --check ui/app.js
+          node --check ui/app-settings.js
+          node --check ui/app-operations.js
+          node --check ui/app-profile.js
+      - name: Validate example JSON profile
+        shell: pwsh
+        run: Get-Content .\profiles\onepap24-settings.example.json -Raw | ConvertFrom-Json | Out-Null
       - name: Download modules
         run: go mod download
       - name: Build configurator
