@@ -60,7 +60,7 @@ jobs:
         run: go test ./... -race -count=1
 
   windows-build:
-    name: Windows build
+    name: Windows build and manager smoke test
     runs-on: windows-latest
     defaults:
       run:
@@ -71,6 +71,22 @@ jobs:
         with:
           go-version-file: configurator/go.mod
           cache-dependency-path: configurator/go.sum
+      - name: Validate PowerShell manager
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        run: |
+          $tokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path .\onepap.ps1),
+            [ref]$tokens,
+            [ref]$parseErrors
+          ) | Out-Null
+          if ($parseErrors.Count -gt 0) {
+            $parseErrors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
+          pwsh -NoLogo -NoProfile -File .\onepap.ps1 help
       - name: Download modules
         run: go mod download
       - name: Build configurator
