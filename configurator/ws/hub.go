@@ -18,9 +18,10 @@ var upgrader = websocket.Upgrader{
 
 // Hub управляет WebSocket-подключениями и рассылкой событий.
 type Hub struct {
-	mu         sync.RWMutex
-	clients    map[*client]struct{}
-	maxClients int
+	mu             sync.RWMutex
+	clients        map[*client]struct{}
+	maxClients     int
+	pendingClients int
 }
 
 // NewHub создаёт новый хаб.
@@ -44,20 +45,38 @@ type client struct {
 	topics map[string]bool
 }
 
+// reserveClientSlot атомарно учитывает ещё не завершившийся WebSocket handshake.
+// Без резервирования Dial может получить 101 Switching Protocols раньше, чем
+// ServeHTTP добавит соединение в clients, и несколько запросов превысят лимит.
+func (h *Hub) reserveClientSlot() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if h.maxClients > 0 && len(h.clients)+h.pendingClients >= h.maxClients {
+		return false
+	}
+	h.pendingClients++
+	return true
+}
+
+func (h *Hub) releaseClientReservation() {
+	h.mu.Lock()
+	if h.pendingClients > 0 {
+		h.pendingClients--
+	}
+	h.mu.Unlock()
+}
+
 // ServeHTTP обрабатывает WebSocket-подключение.
 func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	h.mu.RLock()
-	max := h.maxClients
-	current := len(h.clients)
-	h.mu.RUnlock()
-
-	if max > 0 && current >= max {
+	if !h.reserveClientSlot() {
 		http.Error(w, "слишком много WebSocket-подключений", http.StatusServiceUnavailable)
 		return
 	}
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
+		h.releaseClientReservation()
 		log.Printf("[ws] upgrade error: %v", err)
 		return
 	}
@@ -81,6 +100,9 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.mu.Lock()
+	if h.pendingClients > 0 {
+		h.pendingClients--
+	}
 	h.clients[c] = struct{}{}
 	total := len(h.clients)
 	h.mu.Unlock()
