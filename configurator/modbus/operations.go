@@ -214,46 +214,61 @@ func (c *Client) ReadAllSettings(progress ProgressFunc) ([]model.StepParams, mod
 	return steps, detection, nil
 }
 
-// WriteAllSettings записывает ВСЕ 11 шагов + delta на контроллер.
-// Шаги пишутся последовательно: переключение на шаг → время → объём.
-// Регистр 41 (delta) пишется отдельно, независимо от номера шага.
-// Если progress != nil, вызывает после каждого шага: progress(current, total, label).
+// WriteAllSettings записывает ВСЕ 11 шагов + delta на контроллер в оптимизированном атомарном батч-режиме.
 func (c *Client) WriteAllSettings(steps []model.StepParams, delta int, progress ProgressFunc) (int, error) {
-	// Pre-validate все шаги до начала записи
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	for _, step := range steps {
 		if err := validateStepParams(step.ID, step.ExposureTime, step.FillVolume); err != nil {
 			return 0, fmt.Errorf("предпроверка шага %d: %w", step.ID, err)
 		}
 	}
 
-	written := 0
-	for _, step := range steps {
-		if progress != nil {
-			progress(step.ID, 11, "Запись шага "+strconv.Itoa(step.ID)+"/11")
-		}
-		if err := c.WriteStepParams(step); err != nil {
-			return written, fmt.Errorf("шаг %d: %w", step.ID, err)
-		}
-		written++
+	transport := lockedSelectorScanTransport{client: c}
+	if err := transport.waitReady(10 * time.Second); err != nil {
+		return 0, fmt.Errorf("контроллер не готов к записи настроек: %w", err)
 	}
 
-	// Delta — независимо от шага
+	written := 0
+	total := len(steps)
 	if delta >= 0 && delta <= 255 {
-		if progress != nil {
-			progress(12, 12, "Запись delt'ы")
-		}
-		if err := c.WaitReady(5 * time.Second); err != nil {
-			return written, fmt.Errorf("контроллер занят перед записью delta: %w", err)
-		}
-		if err := c.WriteRegister(RegReagentEmptyDelta, uint16(delta)); err != nil {
-			return written, fmt.Errorf("запись delta (рег. 41): %w", err)
-		}
-		if actual, err := c.ReadRegister(RegReagentEmptyDelta); err != nil {
-			return written, fmt.Errorf("эхо delta: %w", err)
-		} else if actual != uint16(delta) {
-			return written, fmt.Errorf("эхо delta: записано %d, прочитано %d", delta, actual)
-		}
+		total++
+	}
+
+	for _, step := range steps {
 		written++
+		if progress != nil {
+			progress(written, total, fmt.Sprintf("Запись шага %d/11", step.ID))
+		}
+
+		bytesPayload := []byte{
+			byte(step.ID >> 8), byte(step.ID),
+			byte(step.ExposureTime >> 8), byte(step.ExposureTime),
+			byte(step.FillVolume >> 8), byte(step.FillVolume),
+		}
+		_, err := c.client.WriteMultipleRegisters(RegCurrentStep, 3, bytesPayload)
+		if err != nil {
+			if err := transport.writeRegister(RegCurrentStep, uint16(step.ID)); err != nil {
+				return written - 1, fmt.Errorf("шаг %d (current_step): %w", step.ID, err)
+			}
+			if err := transport.writeRegister(RegExposureTime, uint16(step.ExposureTime)); err != nil {
+				return written - 1, fmt.Errorf("шаг %d (exposure_time): %w", step.ID, err)
+			}
+			if err := transport.writeRegister(RegLiquidFillVolume, uint16(step.FillVolume)); err != nil {
+				return written - 1, fmt.Errorf("шаг %d (fill_volume): %w", step.ID, err)
+			}
+		}
+	}
+
+	if delta >= 0 && delta <= 255 {
+		written++
+		if progress != nil {
+			progress(written, total, "Запись delta")
+		}
+		if err := transport.writeRegister(RegReagentEmptyDelta, uint16(delta)); err != nil {
+			return written - 1, fmt.Errorf("запись delta (рег. 41): %w", err)
+		}
 	}
 
 	return written, nil
@@ -493,41 +508,7 @@ func (c *Client) ReadAllValvePositions(progress ProgressFunc) ([]model.SelectorP
 	return c.readAllValvePositionsFast(progress)
 }
 
-// WriteAllValvePositions записывает циклом все положения для селектора 1 и 2.
+// WriteAllValvePositions записывает циклом все положения для селектора 1 и 2 в оптимизированном атомарном батч-режиме.
 func (c *Client) WriteAllValvePositions(sel1, sel2 []model.SelectorPosition, progress ProgressFunc) (int, error) {
-	for _, p := range sel1 {
-		if err := validateSelectorPosition(p.Selector, p.Hole, p.Coord); err != nil {
-			return 0, fmt.Errorf("предпроверка клапан 1 отв %d: %w", p.Hole, err)
-		}
-	}
-	for _, p := range sel2 {
-		if err := validateSelectorPosition(p.Selector, p.Hole, p.Coord); err != nil {
-			return 0, fmt.Errorf("предпроверка клапан 2 отв %d: %w", p.Hole, err)
-		}
-	}
-
-	written := 0
-	total := len(sel1) + len(sel2)
-
-	for _, p := range sel1 {
-		written++
-		if progress != nil {
-			progress(written, total, fmt.Sprintf("Запись Клапан 1, отв. %d/14", p.Hole))
-		}
-		if err := c.WriteSelectorPositionParams(p); err != nil {
-			return written - 1, fmt.Errorf("клапан 1 отв %d: %w", p.Hole, err)
-		}
-	}
-
-	for _, p := range sel2 {
-		written++
-		if progress != nil {
-			progress(written, total, fmt.Sprintf("Запись Клапан 2, отв. %d/14", p.Hole))
-		}
-		if err := c.WriteSelectorPositionParams(p); err != nil {
-			return written - 1, fmt.Errorf("клапан 2 отв %d: %w", p.Hole, err)
-		}
-	}
-
-	return written, nil
+	return c.writeAllValvePositionsFast(sel1, sel2, progress)
 }
