@@ -7,19 +7,24 @@
     ['Вода дистиллированная',50,80],['Спирт 87%',10,60],['OG-6',10,40],['Спирт 96%',10,60],
     ['EA-50',120,40],['Спирт 87%',10,60],['Спирт 87%',10,60],['Спирт 96%',10,60]
   ];
-  const HOLES = ['Исходное положение','Воздух','Гематоксилин Харриса','Воздух','Вода дистиллированная','Воздух','Спирт 87%','Воздух','Спирт 96%','Воздух','OG-6','Воздух','EA-50','Воздух','Хлорка'];
-  const COORDS = [0,0,1371,2742,4114,5485,6856,8227,9599,10970,12341,13712,15084,16455,17826];
+  const HOLES = ['Исходное положение','Воздух','EA-50','Воздух','Вода дистиллированная','Воздух','Спирт 87%','Воздух','Спирт 96%','Воздух','OG-6','Воздух','Гематоксилин Харриса','Воздух','Хлорка'];
+  const COORDS1 = [0,700,1400,2771,4142,5513,6884,8256,9627,10998,12369,13741,15112,16483,17853];
+  const COORDS2 = [0,600,1200,2571,3942,5313,6684,8056,9427,10798,12169,13541,14912,16283,17653];
   Object.assign(O.state, { steps: [], valves1: [], valves2: [], stepsFromDevice: false, valvesFromDevice: false,
     detection: { reagent_empty: false, reagent_empty_delta: 10, original: 10, dirty: false } });
 
   const defaultSteps = () => STEP_DEFAULTS.map(([name,t,v],i) => ({ id:i+1,name,exposure_time:t,fill_volume:v,originalT:t,originalV:v,dirty:false,error:'' }));
-  const defaultValves = (selector) => HOLES.map((name,hole) => ({ selector,hole,name,coord:COORDS[hole],original:COORDS[hole],dirty:false,error:'' }));
+  const defaultValves = (selector) => HOLES.map((name,hole) => {
+    const coords = selector === 1 ? COORDS1 : COORDS2;
+    return { selector,hole,name,coord:coords[hole],original:coords[hole],dirty:false,error:'' };
+  });
   const normalizeSteps = (items) => (items || []).map((item,i) => {
     const t=Number(item.exposure_time??STEP_DEFAULTS[i][1]), v=Number(item.fill_volume??STEP_DEFAULTS[i][2]);
     return { id:Number(item.id??i+1),name:String(item.name||STEP_DEFAULTS[i][0]),exposure_time:t,fill_volume:v,originalT:t,originalV:v,dirty:false,error:'' };
   });
   const normalizeValves = (items,selector) => (items || []).map((item,i) => {
-    const coord=Number(item.coord??COORDS[i]);
+    const coords = selector === 1 ? COORDS1 : COORDS2;
+    const coord=Number(item.coord??coords[i]);
     return { selector,hole:Number(item.hole??i),name:String(item.name||HOLES[i]),coord,original:coord,dirty:false,error:'' };
   });
   const settingsCount = () => O.state.steps.filter((item) => item.dirty).length + (O.state.detection.dirty ? 1 : 0);

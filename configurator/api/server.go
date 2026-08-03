@@ -206,14 +206,18 @@ func makeDefaultSteps() []model.StepParams {
 
 func makeDefaultSelectorPositions(sel int) []model.SelectorPosition {
 	positions := make([]model.SelectorPosition, 15)
+	coordsSource := modbus.DefaultSelectorCoords
+	if sel == 1 {
+		coordsSource = modbus.DefaultSelector1Coords
+	}
 	for i := 0; i <= 14; i++ {
 		name := ""
 		if i < len(modbus.DefaultSelectorHoleNames) {
 			name = modbus.DefaultSelectorHoleNames[i]
 		}
 		coord := 0
-		if i < len(modbus.DefaultSelectorCoords) {
-			coord = modbus.DefaultSelectorCoords[i]
+		if i < len(coordsSource) {
+			coord = coordsSource[i]
 		}
 		positions[i] = model.SelectorPosition{
 			Selector: sel,

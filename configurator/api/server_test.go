@@ -132,7 +132,7 @@ func TestGetValvesAndPutValve(t *testing.T) {
 	var sel1 []model.SelectorPosition
 	_ = json.Unmarshal(sel1Bytes, &sel1)
 	testutil.AssertEqual(t, len(sel1), 15, "Селектор 1 имеет 15 позиций (0..14)")
-	testutil.AssertEqual(t, sel1[2].Coord, 1371, "Начальная координата отв 2 = 1371")
+	testutil.AssertEqual(t, sel1[2].Coord, 1400, "Начальная координата отв 2 = 1400")
 
 	// 2. PUT /api/v1/settings/valves/1/2
 	updatePayload := map[string]int{"coord": 1500}

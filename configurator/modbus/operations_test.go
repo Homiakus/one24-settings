@@ -98,11 +98,11 @@ func TestDefaultSelectorArrays(t *testing.T) {
 	testutil.AssertEqual(t, len(DefaultSelectorHoleNames), 15, "DefaultSelectorHoleNames должен иметь 15 элементов")
 
 	testutil.AssertEqual(t, DefaultSelectorCoords[0], 0, "Координата отв 0 = 0")
-	testutil.AssertEqual(t, DefaultSelectorCoords[2], 1371, "Координата отв 2 = 1371")
-	testutil.AssertEqual(t, DefaultSelectorCoords[14], 17826, "Координата отв 14 = 17826")
+	testutil.AssertEqual(t, DefaultSelectorCoords[2], 1200, "Координата отв 2 = 1200")
+	testutil.AssertEqual(t, DefaultSelectorCoords[14], 17653, "Координата отв 14 = 17653")
 
-	testutil.AssertEqual(t, DefaultSelectorHoleNames[2], "Гематоксилин Харриса", "Имя отв 2: Гематоксилин Харриса")
-	testutil.AssertEqual(t, DefaultSelectorHoleNames[4], "Вода дистилл.", "Имя отв 4: Вода дистилл.")
+	testutil.AssertEqual(t, DefaultSelectorHoleNames[2], "EA-50", "Имя отв 2: EA-50")
+	testutil.AssertEqual(t, DefaultSelectorHoleNames[4], "Вода дистиллированная", "Имя отв 4: Вода дистиллированная")
 }
 
 // BenchmarkValidateStepParams замеряет скорость работы встроенного валидатора шагов.

@@ -2,8 +2,8 @@
   "schema": "onepap24-settings",
   "schema_version": 1,
   "exported_at": "2026-08-03T12:00:00.000Z",
-  "profile_name": "Полноценный профиль Папаниколау",
-  "description": "Пример JSON-файла настроек ONEPAP.24 для экспорта и импорта профиля.",
+  "profile_name": "Тестовый профиль (2 сек)",
+  "description": "Тестовый профиль для быстрой проверки: время экспозиции 2 секунды у всех 11 шагов и осаждения.",
   "application": {
     "name": "ONEPAP.24 Modbus Configurator",
     "version": "1"
@@ -17,17 +17,17 @@
     "protocol": "pap_stain",
     "reagent_empty_delta": 10,
     "steps": [
-      { "id": 1, "name": "Спирт 96% (фиксация)", "exposure_time": 10, "fill_volume": 50 },
-      { "id": 2, "name": "Гематоксилин Харриса", "exposure_time": 120, "fill_volume": 30 },
-      { "id": 3, "name": "Вода дистиллированная", "exposure_time": 10, "fill_volume": 80 },
-      { "id": 4, "name": "Вода дистиллированная", "exposure_time": 50, "fill_volume": 80 },
-      { "id": 5, "name": "Спирт 87%", "exposure_time": 10, "fill_volume": 60 },
-      { "id": 6, "name": "OG-6", "exposure_time": 10, "fill_volume": 40 },
-      { "id": 7, "name": "Спирт 96%", "exposure_time": 10, "fill_volume": 60 },
-      { "id": 8, "name": "EA-50", "exposure_time": 120, "fill_volume": 40 },
-      { "id": 9, "name": "Спирт 87%", "exposure_time": 10, "fill_volume": 60 },
-      { "id": 10, "name": "Спирт 87%", "exposure_time": 10, "fill_volume": 60 },
-      { "id": 11, "name": "Спирт 96%", "exposure_time": 10, "fill_volume": 60 }
+      { "id": 1, "name": "Спирт 96% (фиксация)", "exposure_time": 2, "fill_volume": 50 },
+      { "id": 2, "name": "Гематоксилин Харриса", "exposure_time": 2, "fill_volume": 30 },
+      { "id": 3, "name": "Вода дистиллированная", "exposure_time": 2, "fill_volume": 80 },
+      { "id": 4, "name": "Вода дистиллированная", "exposure_time": 2, "fill_volume": 80 },
+      { "id": 5, "name": "Спирт 87%", "exposure_time": 2, "fill_volume": 60 },
+      { "id": 6, "name": "OG-6", "exposure_time": 2, "fill_volume": 40 },
+      { "id": 7, "name": "Спирт 96%", "exposure_time": 2, "fill_volume": 60 },
+      { "id": 8, "name": "EA-50", "exposure_time": 2, "fill_volume": 40 },
+      { "id": 9, "name": "Спирт 87%", "exposure_time": 2, "fill_volume": 60 },
+      { "id": 10, "name": "Спирт 87%", "exposure_time": 2, "fill_volume": 60 },
+      { "id": 11, "name": "Спирт 96%", "exposure_time": 2, "fill_volume": 60 }
     ]
   },
   "selectors": {

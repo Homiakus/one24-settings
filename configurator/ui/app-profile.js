@@ -77,7 +77,7 @@
 
   function normalizeProfile(raw) {
     if (!isObject(raw)) throw new Error('Корень JSON должен быть объектом');
-    assertAllowedKeys(raw, ['schema', 'schema_version', 'exported_at', 'application', 'device', 'staining', 'selectors'], 'profile');
+    assertAllowedKeys(raw, ['schema', 'schema_version', 'exported_at', 'profile_name', 'description', 'application', 'device', 'staining', 'selectors'], 'profile');
     if (raw.schema !== SCHEMA) throw new Error(`schema: ожидалось "${SCHEMA}"`);
     if (raw.schema_version !== VERSION) throw new Error(`schema_version: поддерживается только версия ${VERSION}`);
 
@@ -119,12 +119,58 @@
       schema: SCHEMA,
       schema_version: VERSION,
       exported_at: raw.exported_at || new Date().toISOString(),
+      profile_name: raw.profile_name ? String(raw.profile_name) : undefined,
+      description: raw.description ? String(raw.description) : undefined,
       application: { name: 'ONEPAP.24 Modbus Configurator', version: '1' },
       device,
       staining,
       selectors
     };
   }
+
+  const SEL1_COORDS = [0, 700, 1400, 2771, 4142, 5513, 6884, 8256, 9627, 10998, 12369, 13741, 15112, 16483, 17853];
+  const SEL2_COORDS = [0, 600, 1200, 2571, 3942, 5313, 6684, 8056, 9427, 10798, 12169, 13541, 14912, 16283, 17653];
+  const HOLE_NAMES = ["Исходное положение (Home)","Воздух","EA-50","Воздух","Вода дистиллированная","Воздух","Спирт 87%","Воздух","Спирт 96%","Воздух","OG-6 (оранжевый G)","Воздух","Гематоксилин Харриса","Воздух","Хлорка"];
+
+  const buildSelectorList = (sel, coords) => coords.map((coord, hole) => ({
+    selector: sel,
+    hole,
+    name: HOLE_NAMES[hole] || (hole % 2 === 1 ? 'Воздух' : `Позиция ${hole}`),
+    coord
+  }));
+
+  const STAIN_NAMES = [
+    "Спирт 96% (фиксация)", "Гематоксилин Харриса", "Вода дистиллированная", "Вода дистиллированная",
+    "Спирт 87%", "OG-6", "Спирт 96%", "EA-50", "Спирт 87%", "Спирт 87%", "Спирт 96%"
+  ];
+  const FULL_EXP = [10, 120, 10, 50, 10, 10, 10, 120, 10, 10, 10];
+  const FILL_VOLS = [50, 30, 80, 80, 60, 40, 60, 40, 60, 60, 60];
+
+  const buildStepsList = (expTime) => STAIN_NAMES.map((name, i) => ({
+    id: i + 1,
+    name,
+    exposure_time: typeof expTime === 'number' ? expTime : FULL_EXP[i],
+    fill_volume: FILL_VOLS[i]
+  }));
+
+  const PRESETS = {
+    full: normalizeProfile({
+      schema: SCHEMA,
+      schema_version: VERSION,
+      profile_name: 'Полноценный рабочий профиль',
+      device: { port: 'COM4', baudrate: 115200, slave_id: 1 },
+      staining: { protocol: 'pap_stain', reagent_empty_delta: 10, steps: buildStepsList(null) },
+      selectors: { selector1: buildSelectorList(1, SEL1_COORDS), selector2: buildSelectorList(2, SEL2_COORDS) }
+    }),
+    test: normalizeProfile({
+      schema: SCHEMA,
+      schema_version: VERSION,
+      profile_name: 'Тестовый профиль (2 сек)',
+      device: { port: 'COM4', baudrate: 115200, slave_id: 1 },
+      staining: { protocol: 'pap_stain', reagent_empty_delta: 10, steps: buildStepsList(2) },
+      selectors: { selector1: buildSelectorList(1, SEL1_COORDS), selector2: buildSelectorList(2, SEL2_COORDS) }
+    })
+  };
 
   function buildProfile() {
     return normalizeProfile({
@@ -205,7 +251,8 @@
     }
 
     const importedAt = new Date().toLocaleTimeString();
-    O.text('#settings-source', `Импортирован JSON-профиль ${importedAt}. Перед записью проверьте изменённые строки.`);
+    const name = profile.profile_name || 'JSON-профиль';
+    O.text('#settings-source', `Применён профиль "${name}" (${importedAt}). Перед записью проверьте изменённые строки.`);
     O.text('#data-freshness', `Профиль: ${importedAt}`);
   }
 
@@ -263,6 +310,21 @@
     const intro = O.$('#tab-settings .page-intro');
     if (!actions || !intro) return;
 
+    const presetSelect = document.createElement('select');
+    presetSelect.id = 'preset-profile-select';
+    presetSelect.className = 'inp';
+    presetSelect.ariaLabel = 'Выбор профиля настроек';
+    presetSelect.innerHTML = `
+      <option value="full">Полноценный рабочий профиль (Папаниколау)</option>
+      <option value="test">Тестовый профиль (2 сек у всех экспозиций)</option>
+    `;
+
+    const applyButton = document.createElement('button');
+    applyButton.id = 'btn-apply-profile';
+    applyButton.type = 'button';
+    applyButton.className = 'btn btn-primary';
+    applyButton.textContent = 'Применить профиль';
+
     const importButton = document.createElement('button');
     importButton.id = 'btn-import-profile';
     importButton.type = 'button';
@@ -288,8 +350,25 @@
 
     actions.prepend(exportButton);
     actions.prepend(importButton);
+    actions.prepend(applyButton);
+    actions.prepend(presetSelect);
     intro.after(status);
     document.body.append(input);
+
+    applyButton.onclick = async () => {
+      const key = presetSelect.value;
+      const profile = PRESETS[key] || PRESETS.full;
+      const name = key === 'test' ? 'Тестовый профиль (2 сек)' : 'Полноценный рабочий профиль';
+      const accepted = await O.confirm(
+        `Применить профиль "${name}"?`,
+        `Профиль полностью обновит экспозиции всех 11 шагов (${key === 'test' ? '2 секунды' : 'штатные времена'}) и все 30 координат для первого и второго селекторов.`,
+        'Применить полностью'
+      );
+      if (!accepted) return;
+      applyProfile(profile);
+      O.message('#profile-log', `Профиль "${name}" применён полностью к настройкам экспозиции и селекторам.`, 'ok');
+      O.toast(`Профиль "${name}" полностью применён.`, 'ok');
+    };
 
     importButton.onclick = () => input.click();
     exportButton.onclick = exportProfile;
