@@ -1,26 +1,37 @@
-# Binaries & Executables
+# Binaries and build artifacts
 *.exe
 *.exe.test
 *.dll
 *.so
 *.dylib
+artifacts/
 configurator/modbus-configurator.exe
 
-# Logs & Temporary Files
+# Managed runtime state
+.runtime/
+
+# Logs and temporary files
 *.log
 modbus-configurator.log
+*.tmp
 
-# Profiling & Diagnostics Output
+# Local user configuration
+configurator/user_settings.toml
+configurator/configurator.local.toml
+
+# Profiling and diagnostics output
 *.pprof
+audit/evidence/profiles/
+audit/evidence/benchmarks/current.txt
 
-# Tooling & Local MCP Caches
+# Tooling and local MCP caches
 .playwright-mcp/
 
-# Go Test Artifacts & Coverage
+# Go test artifacts and coverage
 *.out
 *.coverprofile
 
-# OS Generated Files
+# OS-generated files
 .DS_Store
 Thumbs.db
 ehthumbs.db
