@@ -234,6 +234,11 @@ func (c *Client) writeAllValvePositionsFast(sel1, sel2 []model.SelectorPosition,
 		}
 	}
 
+	// Отправка команды 222 в рег. 1 для сохранения всех настроек клапанов в EEPROM
+	if err := transport.writeRegister(RegReadyStatus, CmdSaveEEPROM); err != nil {
+		return written, fmt.Errorf("сохранение клапанов в EEPROM (рег 1 = 222): %w", err)
+	}
+
 	return written, nil
 }
 

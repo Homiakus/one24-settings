@@ -25,6 +25,7 @@ const (
 // ─── Коды команд ──────────────────────────────────────────────────────────────
 
 const (
+	CmdSaveEEPROM        = 222 // W в рег. 1: сохранить настройки в энергонезависимую память EEPROM
 	CmdCalibrateValve    = 90
 	CmdCalibrateSel1     = 100
 	CmdCalibrateSel2     = 110

@@ -271,6 +271,11 @@ func (c *Client) WriteAllSettings(steps []model.StepParams, delta int, progress 
 		}
 	}
 
+	// Отправка команды 222 в рег. 1 для сохранения всех настроек в EEPROM
+	if err := transport.writeRegister(RegReadyStatus, CmdSaveEEPROM); err != nil {
+		return written, fmt.Errorf("сохранение в EEPROM (рег 1 = 222): %w", err)
+	}
+
 	return written, nil
 }
 
@@ -493,10 +498,10 @@ func (c *Client) WriteSelectorPositionParams(p model.SelectorPosition) error {
 	if err := c.WriteRegister(RegSelectorCoord, uint16(p.Coord)); err != nil {
 		return fmt.Errorf("запись координаты %d (рег 21): %w", p.Coord, err)
 	}
-	if actual, err := c.ReadRegister(RegSelectorCoord); err != nil {
-		return fmt.Errorf("эхо координаты %d: %w", p.Coord, err)
-	} else if actual != uint16(p.Coord) {
-		return fmt.Errorf("эхо координаты %d: записано %d, прочитано %d", p.Coord, p.Coord, actual)
+
+	// 4. Отправка команды 222 в рег. 1 для сохранения в EEPROM
+	if err := c.WriteRegister(RegReadyStatus, CmdSaveEEPROM); err != nil {
+		return fmt.Errorf("сохранение в EEPROM (рег 1 = 222): %w", err)
 	}
 
 	return nil
