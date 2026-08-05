@@ -3,7 +3,7 @@
   "schema_version": 1,
   "exported_at": "2026-08-03T12:00:00.000Z",
   "profile_name": "Тестовый профиль (2 сек)",
-  "description": "Тестовый профиль для быстрой проверки: время экспозиции 2 секунды у всех 11 шагов и осаждения.",
+  "description": "Тестовый профиль для быстрой проверки: время экспозиции 2 секунды у всех 11 шагов.",
   "application": {
     "name": "ONEPAP.24 Modbus Configurator",
     "version": "1"
@@ -16,54 +16,290 @@
   "staining": {
     "protocol": "pap_stain",
     "reagent_empty_delta": 10,
+    "sample_exposure_time": 0,
     "steps": [
-      { "id": 1, "name": "Спирт 96% (фиксация)", "exposure_time": 2, "fill_volume": 50 },
-      { "id": 2, "name": "Гематоксилин Харриса", "exposure_time": 2, "fill_volume": 30 },
-      { "id": 3, "name": "Вода дистиллированная", "exposure_time": 2, "fill_volume": 80 },
-      { "id": 4, "name": "Вода дистиллированная", "exposure_time": 2, "fill_volume": 80 },
-      { "id": 5, "name": "Спирт 87%", "exposure_time": 2, "fill_volume": 60 },
-      { "id": 6, "name": "OG-6", "exposure_time": 2, "fill_volume": 40 },
-      { "id": 7, "name": "Спирт 96%", "exposure_time": 2, "fill_volume": 60 },
-      { "id": 8, "name": "EA-50", "exposure_time": 2, "fill_volume": 40 },
-      { "id": 9, "name": "Спирт 87%", "exposure_time": 2, "fill_volume": 60 },
-      { "id": 10, "name": "Спирт 87%", "exposure_time": 2, "fill_volume": 60 },
-      { "id": 11, "name": "Спирт 96%", "exposure_time": 2, "fill_volume": 60 }
+      {
+        "id": 0,
+        "name": "Экспозиция образца",
+        "exposure_time": 0,
+        "fill_volume": 0
+      },
+      {
+        "id": 1,
+        "name": "Спирт 96% (фиксация)",
+        "exposure_time": 2,
+        "fill_volume": 1500
+      },
+      {
+        "id": 2,
+        "name": "Гематоксилин Харриса",
+        "exposure_time": 2,
+        "fill_volume": 1500
+      },
+      {
+        "id": 3,
+        "name": "Вода дистиллированная",
+        "exposure_time": 2,
+        "fill_volume": 1500
+      },
+      {
+        "id": 4,
+        "name": "Вода дистиллированная",
+        "exposure_time": 2,
+        "fill_volume": 1500
+      },
+      {
+        "id": 5,
+        "name": "Спирт 87%",
+        "exposure_time": 2,
+        "fill_volume": 1500
+      },
+      {
+        "id": 6,
+        "name": "OG-6",
+        "exposure_time": 2,
+        "fill_volume": 1500
+      },
+      {
+        "id": 7,
+        "name": "Спирт 96%",
+        "exposure_time": 2,
+        "fill_volume": 1500
+      },
+      {
+        "id": 8,
+        "name": "EA-50",
+        "exposure_time": 2,
+        "fill_volume": 1500
+      },
+      {
+        "id": 9,
+        "name": "Спирт 87%",
+        "exposure_time": 2,
+        "fill_volume": 1500
+      },
+      {
+        "id": 10,
+        "name": "Спирт 87%",
+        "exposure_time": 2,
+        "fill_volume": 1500
+      },
+      {
+        "id": 11,
+        "name": "Спирт 96%",
+        "exposure_time": 2,
+        "fill_volume": 1500
+      },
+      {
+        "id": 12,
+        "name": "Хлорка",
+        "exposure_time": 2,
+        "fill_volume": 1500
+      },
+      {
+        "id": 13,
+        "name": "Хлорка",
+        "exposure_time": 2,
+        "fill_volume": 1500
+      },
+      {
+        "id": 14,
+        "name": "Спирт",
+        "exposure_time": 2,
+        "fill_volume": 1500
+      },
+      {
+        "id": 15,
+        "name": "Вода",
+        "exposure_time": 2,
+        "fill_volume": 1500
+      }
     ]
   },
   "selectors": {
     "selector1": [
-      { "selector": 1, "hole": 0, "name": "Исходное положение (Home)", "coord": 0 },
-      { "selector": 1, "hole": 1, "name": "Воздух", "coord": 700 },
-      { "selector": 1, "hole": 2, "name": "EA-50", "coord": 1400 },
-      { "selector": 1, "hole": 3, "name": "Воздух", "coord": 2771 },
-      { "selector": 1, "hole": 4, "name": "Вода дистиллированная", "coord": 4142 },
-      { "selector": 1, "hole": 5, "name": "Воздух", "coord": 5513 },
-      { "selector": 1, "hole": 6, "name": "Спирт 87%", "coord": 6884 },
-      { "selector": 1, "hole": 7, "name": "Воздух", "coord": 8256 },
-      { "selector": 1, "hole": 8, "name": "Спирт 96%", "coord": 9627 },
-      { "selector": 1, "hole": 9, "name": "Воздух", "coord": 10998 },
-      { "selector": 1, "hole": 10, "name": "OG-6", "coord": 12369 },
-      { "selector": 1, "hole": 11, "name": "Воздух", "coord": 13741 },
-      { "selector": 1, "hole": 12, "name": "Гематоксилин Харриса", "coord": 15112 },
-      { "selector": 1, "hole": 13, "name": "Воздух", "coord": 16483 },
-      { "selector": 1, "hole": 14, "name": "Хлорка", "coord": 17853 }
+      {
+        "selector": 1,
+        "hole": 0,
+        "name": "Исходное положение (Home)",
+        "coord": 0
+      },
+      {
+        "selector": 1,
+        "hole": 1,
+        "name": "Воздух",
+        "coord": 700
+      },
+      {
+        "selector": 1,
+        "hole": 2,
+        "name": "EA-50",
+        "coord": 1400
+      },
+      {
+        "selector": 1,
+        "hole": 3,
+        "name": "Воздух",
+        "coord": 2771
+      },
+      {
+        "selector": 1,
+        "hole": 4,
+        "name": "Вода дистиллированная",
+        "coord": 4142
+      },
+      {
+        "selector": 1,
+        "hole": 5,
+        "name": "Воздух",
+        "coord": 5513
+      },
+      {
+        "selector": 1,
+        "hole": 6,
+        "name": "Спирт 87%",
+        "coord": 6884
+      },
+      {
+        "selector": 1,
+        "hole": 7,
+        "name": "Воздух",
+        "coord": 8256
+      },
+      {
+        "selector": 1,
+        "hole": 8,
+        "name": "Спирт 96%",
+        "coord": 9627
+      },
+      {
+        "selector": 1,
+        "hole": 9,
+        "name": "Воздух",
+        "coord": 10998
+      },
+      {
+        "selector": 1,
+        "hole": 10,
+        "name": "OG-6 (оранжевый G)",
+        "coord": 12369
+      },
+      {
+        "selector": 1,
+        "hole": 11,
+        "name": "Воздух",
+        "coord": 13741
+      },
+      {
+        "selector": 1,
+        "hole": 12,
+        "name": "Гематоксилин Харриса",
+        "coord": 15112
+      },
+      {
+        "selector": 1,
+        "hole": 13,
+        "name": "Воздух",
+        "coord": 16483
+      },
+      {
+        "selector": 1,
+        "hole": 14,
+        "name": "Хлорка",
+        "coord": 17853
+      }
     ],
     "selector2": [
-      { "selector": 2, "hole": 0, "name": "Исходное положение (Home)", "coord": 0 },
-      { "selector": 2, "hole": 1, "name": "Воздух", "coord": 600 },
-      { "selector": 2, "hole": 2, "name": "EA-50", "coord": 1200 },
-      { "selector": 2, "hole": 3, "name": "Воздух", "coord": 2571 },
-      { "selector": 2, "hole": 4, "name": "Вода дистиллированная", "coord": 3942 },
-      { "selector": 2, "hole": 5, "name": "Воздух", "coord": 5313 },
-      { "selector": 2, "hole": 6, "name": "Спирт 87%", "coord": 6684 },
-      { "selector": 2, "hole": 7, "name": "Воздух", "coord": 8056 },
-      { "selector": 2, "hole": 8, "name": "Спирт 96%", "coord": 9427 },
-      { "selector": 2, "hole": 9, "name": "Воздух", "coord": 10798 },
-      { "selector": 2, "hole": 10, "name": "OG-6", "coord": 12169 },
-      { "selector": 2, "hole": 11, "name": "Воздух", "coord": 13541 },
-      { "selector": 2, "hole": 12, "name": "Гематоксилин Харриса", "coord": 14912 },
-      { "selector": 2, "hole": 13, "name": "Воздух", "coord": 16283 },
-      { "selector": 2, "hole": 14, "name": "Хлорка", "coord": 17653 }
+      {
+        "selector": 2,
+        "hole": 0,
+        "name": "Исходное положение (Home)",
+        "coord": 0
+      },
+      {
+        "selector": 2,
+        "hole": 1,
+        "name": "Воздух",
+        "coord": 600
+      },
+      {
+        "selector": 2,
+        "hole": 2,
+        "name": "EA-50",
+        "coord": 1200
+      },
+      {
+        "selector": 2,
+        "hole": 3,
+        "name": "Воздух",
+        "coord": 2571
+      },
+      {
+        "selector": 2,
+        "hole": 4,
+        "name": "Вода дистиллированная",
+        "coord": 3942
+      },
+      {
+        "selector": 2,
+        "hole": 5,
+        "name": "Воздух",
+        "coord": 5313
+      },
+      {
+        "selector": 2,
+        "hole": 6,
+        "name": "Спирт 87%",
+        "coord": 6684
+      },
+      {
+        "selector": 2,
+        "hole": 7,
+        "name": "Воздух",
+        "coord": 8056
+      },
+      {
+        "selector": 2,
+        "hole": 8,
+        "name": "Спирт 96%",
+        "coord": 9427
+      },
+      {
+        "selector": 2,
+        "hole": 9,
+        "name": "Воздух",
+        "coord": 10798
+      },
+      {
+        "selector": 2,
+        "hole": 10,
+        "name": "OG-6 (оранжевый G)",
+        "coord": 12169
+      },
+      {
+        "selector": 2,
+        "hole": 11,
+        "name": "Воздух",
+        "coord": 13541
+      },
+      {
+        "selector": 2,
+        "hole": 12,
+        "name": "Гематоксилин Харриса",
+        "coord": 14912
+      },
+      {
+        "selector": 2,
+        "hole": 13,
+        "name": "Воздух",
+        "coord": 16283
+      },
+      {
+        "selector": 2,
+        "hole": 14,
+        "name": "Хлорка",
+        "coord": 17653
+      }
     ]
   }
 }

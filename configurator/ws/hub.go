@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,8 +13,20 @@ import (
 	"modbus-configurator/model"
 )
 
+// isLocalOrigin проверяет, что Origin заголовок принадлежит localhost.
+func isLocalOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true // прямой доступ (не из браузера)
+	}
+	// Разрешаем только localhost-источники
+	return strings.HasPrefix(origin, "http://localhost") ||
+		strings.HasPrefix(origin, "http://127.0.0.1") ||
+		strings.HasPrefix(origin, "http://[::1]")
+}
+
 var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
+	CheckOrigin: isLocalOrigin,
 }
 
 // Hub управляет WebSocket-подключениями и рассылкой событий.
@@ -88,7 +101,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if len(topics) == 0 {
-		for _, t := range []string{"status", "progress", "sensors", "reagent", "error", "log", "disconnect", "connect"} {
+		for _, t := range []string{"status", "progress", "sensors", "reagent", "reagent_low", "error", "log", "disconnect", "connect"} {
 			topics[t] = true
 		}
 	}

@@ -62,7 +62,7 @@ func CalculateStats(durations []time.Duration) LatencyStats {
 		if p >= 100 {
 			return sorted[n-1]
 		}
-		idx := int(math.Ceil((p / 100.0) * float64(n))) - 1
+		idx := int(math.Ceil((p/100.0)*float64(n))) - 1
 		if idx < 0 {
 			idx = 0
 		}

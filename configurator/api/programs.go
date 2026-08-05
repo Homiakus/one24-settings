@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"modbus-configurator/model"
 	"modbus-configurator/modbus"
+	"modbus-configurator/model"
 )
 
 var programMu sync.Mutex
@@ -17,19 +17,24 @@ var programMu sync.Mutex
 type programCtx struct {
 	ctx    context.Context
 	cancel context.CancelFunc
+	gen    uint64 // поколение: защищает от ABA-гонки при перезапуске
 }
 
-var activeProgram *programCtx
+var (
+	activeProgram *programCtx
+	programGenSeq uint64
+)
 
-func startProgram() (context.Context, context.CancelFunc, bool) {
+func startProgram() (context.Context, context.CancelFunc, uint64, bool) {
 	programMu.Lock()
 	defer programMu.Unlock()
 	if activeProgram != nil {
-		return nil, nil, false
+		return nil, nil, 0, false
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	activeProgram = &programCtx{ctx, cancel}
-	return ctx, cancel, true
+	programGenSeq++
+	activeProgram = &programCtx{ctx: ctx, cancel: cancel, gen: programGenSeq}
+	return ctx, cancel, programGenSeq, true
 }
 
 func stopProgram() {
@@ -37,6 +42,17 @@ func stopProgram() {
 	defer programMu.Unlock()
 	if activeProgram != nil {
 		activeProgram.cancel()
+		activeProgram = nil
+	}
+}
+
+// finishProgram снимает блокировку, только если программа всё ещё активна
+// и поколение совпадает. Защищает от ABA-гонки: если старая горутина
+// завершается после того, как уже запущена новая программа, она не отменит новую.
+func finishProgram(gen uint64) {
+	programMu.Lock()
+	defer programMu.Unlock()
+	if activeProgram != nil && activeProgram.gen == gen {
 		activeProgram = nil
 	}
 }
@@ -50,7 +66,9 @@ func isProgramRunning() bool {
 // ─── System Check ─────────────────────────────────────────────────────────────
 
 func (s *Server) handleSystemCheck(w http.ResponseWriter, r *http.Request) {
-	if !s.checkModbus(w) { return }
+	if !s.checkModbus(w) {
+		return
+	}
 
 	// Проверить, что PLC не занят перед запуском
 	ready, err := s.modbus.ReadRegister(1)
@@ -63,14 +81,14 @@ func (s *Server) handleSystemCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel, ok := startProgram()
+	ctx, cancel, gen, ok := startProgram()
 	if !ok {
 		jsonError(w, http.StatusConflict, "Программа уже выполняется")
 		return
 	}
 	go func() {
 		defer cancel()
-		defer stopProgram()
+		defer finishProgram(gen)
 		defer recoverPanic("system-check")
 		s.runSystemCheck(ctx)
 	}()
@@ -117,15 +135,17 @@ func (s *Server) runSystemCheck(ctx context.Context) {
 // ─── Load / Sedimentation ─────────────────────────────────────────────────────
 
 func (s *Server) handleLoad(w http.ResponseWriter, r *http.Request) {
-	if !s.checkModbus(w) { return }
-	ctx, cancel, ok := startProgram()
+	if !s.checkModbus(w) {
+		return
+	}
+	ctx, cancel, gen, ok := startProgram()
 	if !ok {
 		jsonError(w, http.StatusConflict, "Программа уже выполняется")
 		return
 	}
 	go func() {
 		defer cancel()
-		defer stopProgram()
+		defer finishProgram(gen)
 		defer recoverPanic("load")
 		s.runSimpleCmd(ctx, modbus.CmdLoadMaterial, "load", "Загрузка образцов")
 	}()
@@ -133,15 +153,17 @@ func (s *Server) handleLoad(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSedimentation(w http.ResponseWriter, r *http.Request) {
-	if !s.checkModbus(w) { return }
-	ctx, cancel, ok := startProgram()
+	if !s.checkModbus(w) {
+		return
+	}
+	ctx, cancel, gen, ok := startProgram()
 	if !ok {
 		jsonError(w, http.StatusConflict, "Программа уже выполняется")
 		return
 	}
 	go func() {
 		defer cancel()
-		defer stopProgram()
+		defer finishProgram(gen)
 		defer recoverPanic("sedimentation")
 		s.runSimpleCmd(ctx, modbus.CmdSedimentation, "sedimentation", "Осаждение")
 	}()
@@ -151,15 +173,17 @@ func (s *Server) handleSedimentation(w http.ResponseWriter, r *http.Request) {
 // ─── Stain Cycle ──────────────────────────────────────────────────────────────
 
 func (s *Server) handleStainStart(w http.ResponseWriter, r *http.Request) {
-	if !s.checkModbus(w) { return }
-	ctx, cancel, ok := startProgram()
+	if !s.checkModbus(w) {
+		return
+	}
+	ctx, cancel, gen, ok := startProgram()
 	if !ok {
 		jsonError(w, http.StatusConflict, "Программа уже выполняется")
 		return
 	}
 	go func() {
 		defer cancel()
-		defer stopProgram()
+		defer finishProgram(gen)
 		defer recoverPanic("stain-cycle")
 		s.runStainCycle(ctx)
 	}()
@@ -201,7 +225,9 @@ func (s *Server) runStainCycle(ctx context.Context) {
 
 		step := stepsCopy[i]
 		s.progressStep(i+1, step.Name)
+		s.state.mu.Lock()
 		s.state.Program.TotalSec = step.ExposureTime + 120
+		s.state.mu.Unlock()
 		s.emitProgress()
 
 		s.addLog("INFO", "Шаг "+itoa(i+1)+"/11: "+step.Name)
@@ -226,7 +252,16 @@ func (s *Server) runStainCycle(ctx context.Context) {
 					Type: "reagent_low",
 					Data: map[string]any{"step": i + 1, "step_name": step.Name, "message": "Закончился реагент на шаге " + itoa(i+1) + ": " + step.Name},
 				})
-				replace := <-ch
+				var replace bool
+				select {
+				case <-ctx.Done():
+					s.state.mu.Lock()
+					s.state.Program.ReagentLow = false
+					s.state.reagentResume = nil
+					s.state.mu.Unlock()
+					return
+				case replace = <-ch:
+				}
 				s.state.mu.Lock()
 				s.state.Program.ReagentLow = false
 				s.state.reagentResume = nil
@@ -281,15 +316,17 @@ func (s *Server) handleStainStop(w http.ResponseWriter, r *http.Request) {
 // ─── Wash ─────────────────────────────────────────────────────────────────────
 
 func (s *Server) handleWashStart(w http.ResponseWriter, r *http.Request) {
-	if !s.checkModbus(w) { return }
-	ctx, cancel, ok := startProgram()
+	if !s.checkModbus(w) {
+		return
+	}
+	ctx, cancel, gen, ok := startProgram()
 	if !ok {
 		jsonError(w, http.StatusConflict, "Программа уже выполняется")
 		return
 	}
 	go func() {
 		defer cancel()
-		defer stopProgram()
+		defer finishProgram(gen)
 		defer recoverPanic("wash")
 		s.runWashCycle(ctx)
 	}()
@@ -303,35 +340,51 @@ func (s *Server) handleWashStart(w http.ResponseWriter, r *http.Request) {
 func (s *Server) runWashCycle(ctx context.Context) {
 	defer s.clearProgram()
 
-	liquids := []struct {
-		code uint16
-		name string
-		sec  int
-	}{
-		{18529, "Хлорка (1)", 20},
-		{18529, "Хлорка (2)", 20},
-		{4744, "Вода (1)", 10},
-		{4744, "Вода (2)", 10},
+	s.rlockState()
+	// Копируем экспозиции в локальную карту ДО снятия блокировки,
+	// чтобы избежать гонки с handleReadAll/handleWriteAll.
+	exposureByStep := make(map[int]int, len(s.state.Steps))
+	for _, st := range s.state.Steps {
+		if st.ExposureTime > 0 {
+			exposureByStep[st.ID] = st.ExposureTime
+		}
 	}
+	washSteps := []struct {
+		stepID int
+		name   string
+		defSec int
+	}{
+		{12, "Хлорка (1)", 20},
+		{13, "Хлорка (2)", 20},
+		{14, "Спирт", 10},
+		{15, "Вода", 10},
+	}
+	s.runlockState()
 
-	for i, liq := range liquids {
+	for i, step := range washSteps {
 		select {
 		case <-ctx.Done():
 			return
 		default:
 		}
-		s.progressStep(i+1, liq.name)
-		s.state.Program.TotalSec = liq.sec + 60
+		sec := step.defSec
+		if e, ok := exposureByStep[step.stepID]; ok {
+			sec = e
+		}
+		s.progressStep(i+1, step.name)
+		s.state.mu.Lock()
+		s.state.Program.TotalSec = sec + 60
+		s.state.mu.Unlock()
 		s.emitProgress()
 
-		s.addLog("INFO", "Промывка "+itoa(i+1)+"/4: "+liq.name)
+		s.addLog("INFO", "Промывка "+itoa(i+1)+"/4: "+step.name)
 
-		if err := s.modbus.SafeWriteRegister(modbus.RegCurrentStep, liq.code); err != nil {
+		if err := s.modbus.SafeWriteRegister(modbus.RegCurrentStep, uint16(step.stepID)); err != nil {
 			s.addLog("ERROR", "Ошибка промывки: "+err.Error())
 			return
 		}
 
-		if err := s.modbus.SendCommand(ctx, modbus.CmdWashSystem, time.Duration(liq.sec+60)*time.Second); err != nil {
+		if err := s.modbus.SendCommand(ctx, modbus.CmdWashSystem, time.Duration(sec+60)*time.Second); err != nil {
 			s.addLog("ERROR", "Ошибка промывки: "+err.Error())
 			return
 		}
@@ -342,15 +395,17 @@ func (s *Server) runWashCycle(ctx context.Context) {
 // ─── Full Cycle ───────────────────────────────────────────────────────────────
 
 func (s *Server) handleFullStart(w http.ResponseWriter, r *http.Request) {
-	if !s.checkModbus(w) { return }
-	ctx, cancel, ok := startProgram()
+	if !s.checkModbus(w) {
+		return
+	}
+	ctx, cancel, gen, ok := startProgram()
 	if !ok {
 		jsonError(w, http.StatusConflict, "Программа уже выполняется")
 		return
 	}
 	go func() {
 		defer cancel()
-		defer stopProgram()
+		defer finishProgram(gen)
 		defer recoverPanic("full-cycle")
 		s.runFullCycle(ctx)
 	}()
@@ -359,16 +414,24 @@ func (s *Server) handleFullStart(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) runFullCycle(ctx context.Context) {
 	s.runSystemCheck(ctx)
-	if ctx.Err() != nil { return }
+	if ctx.Err() != nil {
+		return
+	}
 
 	s.runSimpleCmdSync(ctx, modbus.CmdLoadMaterial, "Загрузка образцов")
-	if ctx.Err() != nil { return }
+	if ctx.Err() != nil {
+		return
+	}
 
 	s.runSimpleCmdSync(ctx, modbus.CmdSedimentation, "Осаждение")
-	if ctx.Err() != nil { return }
+	if ctx.Err() != nil {
+		return
+	}
 
 	s.runStainCycle(ctx)
-	if ctx.Err() != nil { return }
+	if ctx.Err() != nil {
+		return
+	}
 
 	s.runWashCycle(ctx)
 	s.addLog("INFO", "Полный цикл завершён")
@@ -384,7 +447,12 @@ func (s *Server) handleReagentReplaced(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusConflict, "Нет активного ожидания реагента")
 		return
 	}
-	ch <- true
+	select {
+	case ch <- true:
+	default:
+		jsonError(w, http.StatusConflict, "Канал уже обработан")
+		return
+	}
 	jsonOK(w, map[string]string{"status": "replaced"})
 }
 
@@ -396,37 +464,73 @@ func (s *Server) handleReagentCancel(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusConflict, "Нет активного ожидания реагента")
 		return
 	}
-	ch <- false
+	select {
+	case ch <- false:
+	default:
+		jsonError(w, http.StatusConflict, "Канал уже обработан")
+		return
+	}
 	jsonOK(w, map[string]string{"status": "cancelled"})
 }
 
 // ─── Reset PLC ────────────────────────────────────────────────────────────────
 
 func (s *Server) handleResetPLC(w http.ResponseWriter, r *http.Request) {
-	if s.modbus == nil {
+	s.modbusMu.RLock()
+	mb := s.modbus
+	s.modbusMu.RUnlock()
+	if mb == nil {
 		jsonError(w, http.StatusServiceUnavailable, "Modbus не подключён")
 		return
 	}
 
+	// Убедиться что плата свободна перед отправкой команды сброса.
+	// Для экстренного сброса разрешаем небольшой таймаут.
+	if ready, err := mb.ReadRegister(modbus.RegReadyStatus); err == nil && ready != 0 {
+		s.addLog("WARN", "Сброс PLC: контроллер занят (ready_status="+itoa(int(ready))+"), отправляем сброс принудительно")
+	}
+
 	s.addLog("WARN", "Сброс PLC (запись 111 в регистр 1)")
 
-	if err := s.modbus.WriteRegister(1, 111); err != nil {
+	if err := mb.WriteRegister(1, 111); err != nil {
 		s.addLog("ERROR", "Сброс PLC: "+err.Error())
 		jsonError(w, http.StatusInternalServerError, "Сброс PLC не удался: "+err.Error())
 		return
 	}
 
-	// Ждать перезагрузки
-	time.Sleep(2 * time.Second)
-
-	// Проверить, что PLC вернулся
-	ready, err := s.modbus.ReadRegister(1)
-	if err != nil {
-		s.addLog("WARN", "PLC не отвечает после сброса: "+err.Error())
-	} else {
-		s.addLog("INFO", "PLC после сброса: ready_status="+itoa(int(ready)))
+	// Шаг 1: подождать, пока плата уйдёт в перезагрузку
+	// (reg 1 != 0 или ошибка чтения) — до 3 сек
+	s.addLog("INFO", "Ждём начала перезагрузки платы...")
+	for i := 0; i < 15; i++ {
+		time.Sleep(200 * time.Millisecond)
+		val, err := mb.ReadRegisterFast(modbus.RegReadyStatus)
+		if err != nil || val != 0 {
+			// Плата начала перезагрузку
+			break
+		}
 	}
 
+	// Шаг 2: ждать, пока плата вернётся и reg 1 == 0 — до 30 сек
+	s.addLog("INFO", "Ждём завершения перезагрузки (ready_status == 0)...")
+	var ready uint16
+	var err error
+	recovered := false
+	for i := 0; i < 150; i++ {
+		time.Sleep(200 * time.Millisecond)
+		ready, err = mb.ReadRegisterFast(modbus.RegReadyStatus)
+		if err == nil && ready == 0 {
+			recovered = true
+			break
+		}
+	}
+
+	if !recovered {
+		s.addLog("WARN", "PLC не вернулся после сброса за 30 сек")
+		jsonError(w, http.StatusGatewayTimeout, "PLC не вернулся после сброса (таймаут 30 сек)")
+		return
+	}
+
+	s.addLog("INFO", "PLC успешно перезагружен: ready_status=0")
 	jsonOK(w, map[string]any{
 		"status":       "reset",
 		"ready_status": ready,
@@ -436,7 +540,9 @@ func (s *Server) handleResetPLC(w http.ResponseWriter, r *http.Request) {
 // ─── Emergency Stop ───────────────────────────────────────────────────────────
 
 func (s *Server) handleEmergencyStop(w http.ResponseWriter, r *http.Request) {
-	if !s.checkModbus(w) { return }
+	if !s.checkModbus(w) {
+		return
+	}
 	stopProgram()
 
 	s.state.mu.Lock()
@@ -444,7 +550,10 @@ func (s *Server) handleEmergencyStop(w http.ResponseWriter, r *http.Request) {
 	s.state.Program.Paused = false
 	s.state.mu.Unlock()
 
-	if err := s.modbus.WriteRegister(1, 111); err != nil {
+	s.modbusMu.RLock()
+	mb := s.modbus
+	s.modbusMu.RUnlock()
+	if err := mb.WriteRegister(1, 111); err != nil {
 		s.addLog("ERROR", "Аварийный стоп: "+err.Error())
 		jsonError(w, http.StatusInternalServerError, "Аварийный стоп: "+err.Error())
 		return
@@ -476,7 +585,9 @@ func (s *Server) runSimpleCmd(ctx context.Context, cmd uint16, program, label st
 }
 
 func (s *Server) runSimpleCmdSync(ctx context.Context, cmd uint16, label string) {
-	if ctx.Err() != nil { return }
+	if ctx.Err() != nil {
+		return
+	}
 	s.addLog("INFO", label)
 	if err := s.modbus.SendCommand(ctx, cmd, 120*time.Second); err != nil {
 		s.addLog("ERROR", label+": "+err.Error())
@@ -526,13 +637,16 @@ func (s *Server) emitProgress() {
 }
 
 func (s *Server) drainOnAbort() {
-	if s.modbus == nil || !s.modbus.Connected() {
+	s.modbusMu.RLock()
+	mb := s.modbus
+	s.modbusMu.RUnlock()
+	if mb == nil || !mb.Connected() {
 		return
 	}
 	s.addLog("WARN", "Аварийный слив...")
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	if err := s.modbus.SendCommand(ctx, modbus.CmdDrainIntermediate, 60*time.Second); err != nil {
+	if err := mb.SendCommand(ctx, modbus.CmdDrainIntermediate, 60*time.Second); err != nil {
 		s.addLog("ERROR", "Аварийный слив не удался: "+err.Error())
 	} else {
 		s.addLog("INFO", "Аварийный слив: OK")

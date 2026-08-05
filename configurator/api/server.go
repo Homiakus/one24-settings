@@ -8,18 +8,19 @@ import (
 	"sync"
 	"time"
 
-	"modbus-configurator/model"
 	"modbus-configurator/modbus"
+	"modbus-configurator/model"
 	"modbus-configurator/ws"
 )
 
 // Server — HTTP-сервер конфигуратора.
 type Server struct {
-	mux    *http.ServeMux
-	modbus *modbus.Client
-	hub    *ws.Hub
-	state  *ServerState
-	cfg    *ServerConfig
+	mux      *http.ServeMux
+	modbus   *modbus.Client
+	modbusMu sync.RWMutex
+	hub      *ws.Hub
+	state    *ServerState
+	cfg      *ServerConfig
 }
 
 // ServerConfig — настройки из main.
@@ -67,7 +68,10 @@ func (s *Server) routes(uiFS embed.FS) {
 	// ─── Health check ───────────────────────────────────────────────────────
 	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		connected := s.modbus != nil && s.modbus.Connected()
+		s.modbusMu.RLock()
+		mb := s.modbus
+		s.modbusMu.RUnlock()
+		connected := mb != nil && mb.Connected()
 		w.Write([]byte(`{"ok":true,"modbus":` + boolStr(connected) + `}`))
 	})
 
@@ -129,11 +133,13 @@ func (s *Server) routes(uiFS embed.FS) {
 func (s *Server) Handler() http.Handler {
 	var h http.Handler = s.mux
 
-	// Цепочка: recovery → request ID → auth → CORS
+	// Цепочка: recovery → request ID → CSRF → rate limit → auth → CORS
 	h = recoveryMiddleware(h)
 	h = requestIDMiddleware(h)
+	h = csrfMiddleware(h)
 
 	if s.cfg != nil {
+		h = rateLimitMiddleware(s.cfg.RateLimitRPS)(h)
 		h = authMiddleware(s.cfg.APIKey)(h)
 		allowedOrigins := []string{"localhost", "127.0.0.1"}
 		h = corsMiddleware(allowedOrigins)(h)
@@ -165,7 +171,10 @@ func (s *Server) progressCallback(op string) modbus.ProgressFunc {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 func (s *Server) checkModbus(w http.ResponseWriter) bool {
-	if s.modbus == nil || !s.modbus.Connected() {
+	s.modbusMu.RLock()
+	mb := s.modbus
+	s.modbusMu.RUnlock()
+	if mb == nil || !mb.Connected() {
 		jsonError(w, http.StatusServiceUnavailable, "Modbus не подключён. Используйте POST /api/v1/connect")
 		return false
 	}
@@ -192,10 +201,10 @@ func (s *Server) addLog(level, msg string) {
 }
 
 func makeDefaultSteps() []model.StepParams {
-	steps := make([]model.StepParams, 11)
-	for i := 0; i < 11; i++ {
+	steps := make([]model.StepParams, 16)
+	for i := 0; i < 16; i++ {
 		steps[i] = model.StepParams{
-			ID:           i + 1,
+			ID:           i,
 			Name:         modbus.StainStepNames[i],
 			ExposureTime: modbus.DefaultExposureTimes[i],
 			FillVolume:   modbus.DefaultFillVolumes[i],

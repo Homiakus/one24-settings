@@ -2,8 +2,8 @@ package api
 
 import (
 	"bytes"
-	"encoding/json"
 	"embed"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -73,7 +73,7 @@ func TestGetStepsAndPutStep(t *testing.T) {
 	stepsBytes, _ := json.Marshal(dataMap["steps"])
 	var steps []model.StepParams
 	_ = json.Unmarshal(stepsBytes, &steps)
-	testutil.AssertEqual(t, len(steps), 11, "Должна возвращаться таблица из 11 шагов")
+	testutil.AssertEqual(t, len(steps), 16, "Должна возвращаться таблица из 16 шагов")
 
 	// 2. PUT /api/v1/settings/steps/1
 	updatePayload := model.StepParams{

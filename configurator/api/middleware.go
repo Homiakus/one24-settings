@@ -2,9 +2,11 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -119,15 +121,49 @@ func recoveryMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// ─── CSRF Protection ───────────────────────────────────────────────────────────
+
+// csrfMiddleware защищает state-changing методы (POST/PUT/DELETE/PATCH)
+// от cross-site request forgery: если запрос пришёл из браузера с Origin,
+// отличным от localhost, он отклоняется.
+func csrfMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET", "HEAD", "OPTIONS":
+			next.ServeHTTP(w, r)
+			return
+		}
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			origin = r.Header.Get("Referer")
+		}
+		if origin != "" && !isLocalhostOrigin(origin) {
+			jsonError(w, http.StatusForbidden, "доступ запрещён: недопустимый Origin")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func isLocalhostOrigin(origin string) bool {
+	return strings.HasPrefix(origin, "http://localhost") ||
+		strings.HasPrefix(origin, "http://127.0.0.1") ||
+		strings.HasPrefix(origin, "http://[::1]")
+}
+
 // ─── Auth (API Key) ───────────────────────────────────────────────────────────
 
 func authMiddleware(apiKey string) func(http.Handler) http.Handler {
 	if apiKey == "" {
+		log.Println("[WARN] API-ключ не задан — запросы не аутентифицируются")
 		return func(next http.Handler) http.Handler { return next }
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Header.Get("X-API-Key") != apiKey {
+			if subtle.ConstantTimeCompare(
+				[]byte(r.Header.Get("X-API-Key")),
+				[]byte(apiKey),
+			) != 1 {
 				jsonError(w, http.StatusUnauthorized, "неверный API-ключ")
 				return
 			}

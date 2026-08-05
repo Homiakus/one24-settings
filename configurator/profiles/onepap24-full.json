@@ -3,7 +3,7 @@
   "schema_version": 1,
   "exported_at": "2026-08-03T12:00:00.000Z",
   "profile_name": "Полноценный профиль Папаниколау",
-  "description": "Полноценный рабочий профиль окраски по Папаниколау (11 шагов, штатные времена экспозиции).",
+  "description": "Полноценный рабочий профиль окраски по Папаниколау (11 шагов, время экспозиции 300 секунд для каждого шага).",
   "application": {
     "name": "ONEPAP.24 Modbus Configurator",
     "version": "1"
@@ -16,72 +16,103 @@
   "staining": {
     "protocol": "pap_stain",
     "reagent_empty_delta": 10,
+    "sample_exposure_time": 0,
     "steps": [
+      {
+        "id": 0,
+        "name": "Экспозиция образца",
+        "exposure_time": 0,
+        "fill_volume": 0
+      },
       {
         "id": 1,
         "name": "Спирт 96% (фиксация)",
-        "exposure_time": 10,
+        "exposure_time": 300,
         "fill_volume": 50
       },
       {
         "id": 2,
         "name": "Гематоксилин Харриса",
-        "exposure_time": 120,
+        "exposure_time": 300,
         "fill_volume": 30
       },
       {
         "id": 3,
         "name": "Вода дистиллированная",
-        "exposure_time": 10,
+        "exposure_time": 300,
         "fill_volume": 80
       },
       {
         "id": 4,
         "name": "Вода дистиллированная",
-        "exposure_time": 50,
+        "exposure_time": 300,
         "fill_volume": 80
       },
       {
         "id": 5,
         "name": "Спирт 87%",
-        "exposure_time": 10,
+        "exposure_time": 300,
         "fill_volume": 60
       },
       {
         "id": 6,
         "name": "OG-6",
-        "exposure_time": 10,
+        "exposure_time": 300,
         "fill_volume": 40
       },
       {
         "id": 7,
         "name": "Спирт 96%",
-        "exposure_time": 10,
+        "exposure_time": 300,
         "fill_volume": 60
       },
       {
         "id": 8,
         "name": "EA-50",
-        "exposure_time": 120,
+        "exposure_time": 300,
         "fill_volume": 40
       },
       {
         "id": 9,
         "name": "Спирт 87%",
-        "exposure_time": 10,
+        "exposure_time": 300,
         "fill_volume": 60
       },
       {
         "id": 10,
         "name": "Спирт 87%",
-        "exposure_time": 10,
+        "exposure_time": 300,
         "fill_volume": 60
       },
       {
         "id": 11,
         "name": "Спирт 96%",
+        "exposure_time": 300,
+        "fill_volume": 60
+      },
+      {
+        "id": 12,
+        "name": "Хлорка",
+        "exposure_time": 20,
+        "fill_volume": 50
+      },
+      {
+        "id": 13,
+        "name": "Хлорка",
+        "exposure_time": 20,
+        "fill_volume": 50
+      },
+      {
+        "id": 14,
+        "name": "Спирт",
         "exposure_time": 10,
         "fill_volume": 60
+      },
+      {
+        "id": 15,
+        "name": "Вода",
+        "exposure_time": 10,
+        "fill_volume": 80
       }
     ]
   },
@@ -97,7 +128,7 @@
         "selector": 1,
         "hole": 1,
         "name": "Воздух",
-        "coord": 0
+        "coord": 700
       },
       {
         "selector": 1,
@@ -150,7 +181,7 @@
       {
         "selector": 1,
         "hole": 10,
-        "name": "OG-6",
+        "name": "OG-6 (оранжевый G)",
         "coord": 12369
       },
       {
@@ -189,7 +220,7 @@
         "selector": 2,
         "hole": 1,
         "name": "Воздух",
-        "coord": 0
+        "coord": 600
       },
       {
         "selector": 2,
@@ -242,7 +273,7 @@
       {
         "selector": 2,
         "hole": 10,
-        "name": "OG-6",
+        "name": "OG-6 (оранжевый G)",
         "coord": 12169
       },
       {

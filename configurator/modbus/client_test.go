@@ -5,21 +5,10 @@ import (
 	"testing"
 	"time"
 
+	gmodbus "github.com/goburrow/modbus"
+
 	"modbus-configurator/internal/testutil"
 )
-
-// mockExceptionStruct эмулирует ошибку Modbus Exception Code (например, 0x02 Illegal Data Address).
-type mockExceptionStruct struct {
-	code uint8
-}
-
-func (m mockExceptionStruct) Error() string {
-	return "modbus exception"
-}
-
-func (m mockExceptionStruct) ExceptionCode() uint8 {
-	return m.code
-}
 
 // TestIsModbusExceptionVerifiesTypeCheck проверяет распознавание ошибок Modbus.
 func TestIsModbusExceptionVerifiesTypeCheck(t *testing.T) {
@@ -30,9 +19,9 @@ func TestIsModbusExceptionVerifiesTypeCheck(t *testing.T) {
 	// 2. nil ошибка
 	testutil.AssertFalse(t, isModbusException(nil), "nil ошибка не является exception")
 
-	// 3. Кастомная Modbus Exception ошибка
-	modbusErr := mockExceptionStruct{code: 2}
-	testutil.AssertTrue(t, isModbusException(modbusErr), "Ошибки с интерфейсом ExceptionCode должны давать true")
+	// 3. Настоящая Modbus Exception ошибка (goburrow/modbus)
+	modbusErr := &gmodbus.ModbusError{FunctionCode: 3, ExceptionCode: 2}
+	testutil.AssertTrue(t, isModbusException(modbusErr), "Ошибки ModbusError должны давать true")
 }
 
 // TestDefaultRetryConfigVerifiesDefaults проверяет значения конфигурации повторов по умолчанию.

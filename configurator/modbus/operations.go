@@ -66,23 +66,27 @@ func (c *Client) SafeWriteRegister(addr, value uint16) error {
 	return nil
 }
 
-// validateStepParams проверяет диапазоны значений.
+// validateStepParams проверяет диапазоны значений (шаг 0 — экспозиция образца, 1..11 — окраска, 12..15 — промывка).
 func validateStepParams(stepNum, exposure, volume int) error {
-	if stepNum < 1 || stepNum > 11 {
-		return fmt.Errorf("недопустимый номер шага: %d (1..11)", stepNum)
+	if stepNum < 0 || stepNum > 15 {
+		return fmt.Errorf("недопустимый номер шага: %d (0..15)", stepNum)
 	}
-	if exposure < 1 || exposure > 600 {
-		return fmt.Errorf("время экспозиции %d вне диапазона 1..600 сек", exposure)
+	minVal := 1
+	if stepNum == 0 {
+		minVal = 0
 	}
-	if volume < 1 || volume > 6000 {
-		return fmt.Errorf("объём налива %d вне диапазона 1..6000 (мл×10)", volume)
+	if exposure < minVal || exposure > 600 {
+		return fmt.Errorf("время экспозиции %d вне диапазона %d..600 сек", exposure, minVal)
+	}
+	if volume < minVal || volume > 6000 {
+		return fmt.Errorf("объём налива %d вне диапазона %d..6000 (мл×10)", volume, minVal)
 	}
 	return nil
 }
 
-// ReadStepParams читает параметры одного шага окраски.
+// ReadStepParams читает параметры одного шага (0..15).
 func (c *Client) ReadStepParams(stepNum int) (model.StepParams, error) {
-	if stepNum < 1 || stepNum > 11 {
+	if stepNum < 0 || stepNum > 15 {
 		return model.StepParams{}, fmt.Errorf("недопустимый номер шага: %d", stepNum)
 	}
 
@@ -118,8 +122,8 @@ func (c *Client) ReadStepParams(stepNum int) (model.StepParams, error) {
 	}
 
 	name := ""
-	if stepNum-1 < len(StainStepNames) {
-		name = StainStepNames[stepNum-1]
+	if stepNum >= 0 && stepNum < len(StainStepNames) {
+		name = StainStepNames[stepNum]
 	}
 
 	return model.StepParams{
@@ -175,7 +179,7 @@ func (c *Client) WriteStepParams(p model.StepParams) error {
 	return nil
 }
 
-// ReadAllSettings читает все 11 шагов + detection с контроллера.
+// ReadAllSettings читает шаг 0 + все 11 шагов + 4 шага промывки (0..15) + detection с контроллера.
 // Если progress != nil, вызывает после каждого шага: progress(current, total, label).
 func (c *Client) ReadAllSettings(progress ProgressFunc) ([]model.StepParams, model.DetectionParams, error) {
 	// Pre-check: контроллер на связи?
@@ -183,11 +187,11 @@ func (c *Client) ReadAllSettings(progress ProgressFunc) ([]model.StepParams, mod
 		return nil, model.DetectionParams{}, fmt.Errorf("контроллер не отвечает (reg 1): %w", err)
 	}
 
-	steps := make([]model.StepParams, 0, 11)
+	steps := make([]model.StepParams, 0, 16)
 
-	for i := 1; i <= 11; i++ {
+	for i := 0; i <= 15; i++ {
 		if progress != nil {
-			progress(i, 11, "Чтение шага "+strconv.Itoa(i)+"/11")
+			progress(i+1, 16, "Чтение шага "+strconv.Itoa(i))
 		}
 		step, err := c.ReadStepParams(i)
 		if err != nil {
@@ -332,6 +336,10 @@ func (c *Client) SendCommand(ctx context.Context, cmd uint16, timeout time.Durat
 }
 
 // SetSelector переключает селектор на заданное отверстие.
+// Протокол: рег. 19 (RegSelectorTarget) = номер селектора (1/2),
+//
+//	рег. 20 (RegSelectorHole) = номер отверстия (1..14).
+//
 // selectorNum: 1 или 2; hole: 1..14.
 func (c *Client) SetSelector(selectorNum, hole int) error {
 	if selectorNum < 1 || selectorNum > 2 {
@@ -341,33 +349,35 @@ func (c *Client) SetSelector(selectorNum, hole int) error {
 		return fmt.Errorf("недопустимый номер отверстия: %d (1..14)", hole)
 	}
 
-	var regAddr uint16
-	if selectorNum == 1 {
-		regAddr = RegSelector1Hole
-	} else {
-		regAddr = RegSelector2Hole
-	}
-
 	if err := c.WaitReady(30 * time.Second); err != nil {
 		return fmt.Errorf("контроллер не готов: %w", err)
 	}
 
-	if err := c.WriteRegister(regAddr, uint16(hole)); err != nil {
-		return fmt.Errorf("запись селектора %d, отверстие %d: %w", selectorNum, hole, err)
+	// 1. Записать номер селектора в рег. 19 (RegSelectorTarget)
+	if err := c.WriteRegister(RegSelectorTarget, uint16(selectorNum)); err != nil {
+		return fmt.Errorf("выбор селектора %d (рег 19): %w", selectorNum, err)
 	}
 
-	actual, err := c.ReadRegister(regAddr)
+	// 2. Записать номер отверстия в рег. 20 (RegSelectorHole)
+	if err := c.WriteRegister(RegSelectorHole, uint16(hole)); err != nil {
+		return fmt.Errorf("запись отверстия %d селектора %d (рег 20): %w", hole, selectorNum, err)
+	}
+
+	// 3. Эхо-проверка: убедиться, что номер отверстия записан
+	actual, err := c.ReadRegister(RegSelectorHole)
 	if err != nil {
-		return fmt.Errorf("эхо-чтение селектора %d: %w", selectorNum, err)
+		return fmt.Errorf("эхо-чтение отверстия селектора %d: %w", selectorNum, err)
 	}
 	if actual != uint16(hole) {
 		return fmt.Errorf("эхо селектора %d: записано %d, прочитано %d", selectorNum, hole, actual)
 	}
 
+	// 4. Ожидание завершения перемещения
 	if err := c.WaitReady(15 * time.Second); err != nil {
 		return fmt.Errorf("селектор %d не завершил перемещение: %w", selectorNum, err)
 	}
 
+	// 5. Проверка ошибок контроллера
 	errCode, err := c.ReadRegister(RegStatusError)
 	if err != nil {
 		return fmt.Errorf("чтение status_error после селектора %d: %w", selectorNum, err)

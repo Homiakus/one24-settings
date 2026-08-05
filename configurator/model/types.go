@@ -98,15 +98,15 @@ type ServerSettings struct {
 
 // ModbusSettings — параметры Modbus RTU.
 type ModbusSettings struct {
-	Port        string `toml:"port"`
-	Baudrate    int    `toml:"baudrate"`
-	DataBits    int    `toml:"data_bits"`
-	StopBits    int    `toml:"stop_bits"`
-	Parity      string `toml:"parity"`
-	SlaveID     int    `toml:"slave_id"`
-	TimeoutMs   int    `toml:"timeout_ms"`
-	Retries     int    `toml:"retries"`
-	RetryDelayMs int   `toml:"retry_delay_ms"`
+	Port         string `toml:"port"`
+	Baudrate     int    `toml:"baudrate"`
+	DataBits     int    `toml:"data_bits"`
+	StopBits     int    `toml:"stop_bits"`
+	Parity       string `toml:"parity"`
+	SlaveID      int    `toml:"slave_id"`
+	TimeoutMs    int    `toml:"timeout_ms"`
+	Retries      int    `toml:"retries"`
+	RetryDelayMs int    `toml:"retry_delay_ms"`
 }
 
 // FeaturesSettings — настройки функций.

@@ -2,19 +2,26 @@ package api
 
 import (
 	"net/http"
+	"time"
 
 	"modbus-configurator/model"
 )
 
 func (s *Server) handleLog(w http.ResponseWriter, r *http.Request) {
+	s.state.mu.RLock()
+	entries := make([]model.LogEntry, len(s.state.Log))
+	copy(entries, s.state.Log)
+	s.state.mu.RUnlock()
 	jsonOK(w, map[string]any{
-		"entries": s.state.Log,
-		"count":   len(s.state.Log),
+		"entries": entries,
+		"count":   len(entries),
 	})
 }
 
 func (s *Server) handleClearLog(w http.ResponseWriter, r *http.Request) {
+	s.state.mu.Lock()
 	s.state.Log = make([]model.LogEntry, 0)
+	s.state.mu.Unlock()
 	s.addLog("INFO", "Журнал очищен")
 	jsonOK(w, map[string]string{"status": "cleared"})
 }
@@ -39,6 +46,11 @@ func (s *Server) handleLastError(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleClearError(w http.ResponseWriter, r *http.Request) {
 	if !s.checkModbus(w) {
+		return
+	}
+
+	if err := s.modbus.WaitReady(10 * time.Second); err != nil {
+		jsonError(w, http.StatusServiceUnavailable, "Контроллер не готов: "+err.Error())
 		return
 	}
 

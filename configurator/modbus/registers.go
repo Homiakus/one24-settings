@@ -6,20 +6,18 @@ type ProgressFunc func(current, total int, label string)
 // ─── Адреса регистров ─────────────────────────────────────────────────────────
 
 const (
-	RegReadyStatus       = 1   // R     готовность (0=готов, 1=занят)
-	RegStatusError       = 5   // R     код ошибки
-	RegCmdTarget         = 9   // W     код команды
-	RegSelector1Hole     = 19  // R/W   позиция первого селектора (1..14)
-	RegSelector2Hole     = 20  // R/W   позиция второго селектора (1..14)
-	RegSelectorTarget    = 19  // R/W   выбор клапана (1 или 2) + home
-	RegSelectorHole      = 20  // R/W   выбор номера отверстия (0...14)
-	RegSelectorCoord     = 21  // R/W   координата отверстия
-	RegStatusDrain       = 22  // R     статус слива
-	RegCurrentStep       = 37  // W     номер шага / liquid_code
-	RegExposureTime      = 38  // R/W   время экспозиции (сек)
-	RegLiquidFillVolume  = 39  // R/W   объём налива (мл×10)
-	RegReagentEmpty      = 40  // R     флаг окончания реагента
-	RegReagentEmptyDelta = 41  // R/W   порог детекции пустого реагента
+	RegReadyStatus       = 1  // R     готовность (0=готов, 1=занят)
+	RegStatusError       = 5  // R     код ошибки
+	RegCmdTarget         = 9  // W     код команды
+	RegSelectorTarget    = 19 // R/W   выбор клапана (1 или 2)
+	RegSelectorHole      = 20 // R/W   выбор номера отверстия (0...14)
+	RegSelectorCoord     = 21 // R/W   координата отверстия
+	RegStatusDrain       = 22 // R     статус слива
+	RegCurrentStep       = 37 // W     номер шага / liquid_code
+	RegExposureTime      = 38 // R/W   время экспозиции (сек)
+	RegLiquidFillVolume  = 39 // R/W   объём налива (мл×10)
+	RegReagentEmpty      = 40 // R     флаг окончания реагента
+	RegReagentEmptyDelta = 41 // R/W   порог детекции пустого реагента
 )
 
 // ─── Коды команд ──────────────────────────────────────────────────────────────
@@ -75,8 +73,9 @@ var ErrorNames = map[uint16]string{
 
 // ─── Шаги окраски (имена реагентов) ──────────────────────────────────────────
 
-// StainStepNames — имена реагентов для 11 шагов Папаниколау.
+// StainStepNames — имена реагентов для шага 0 (экспозиция образца), 11 шагов Папаниколау и 4 шагов промывки (12..15).
 var StainStepNames = []string{
+	"Экспозиция образца",
 	"Спирт 96% (фиксация)",
 	"Гематоксилин Харриса",
 	"Вода дистиллированная",
@@ -88,13 +87,17 @@ var StainStepNames = []string{
 	"Спирт 87%",
 	"Спирт 87%",
 	"Спирт 96%",
+	"Хлорка",
+	"Хлорка",
+	"Спирт",
+	"Вода",
 }
 
 // DefaultExposureTimes — времена экспозиции по умолчанию (сек).
-var DefaultExposureTimes = []int{10, 120, 10, 50, 10, 10, 10, 120, 10, 10, 10}
+var DefaultExposureTimes = []int{0, 10, 120, 10, 50, 10, 10, 10, 120, 10, 10, 10, 20, 20, 10, 10}
 
 // DefaultFillVolumes — объём налива по умолчанию (мл×10).
-var DefaultFillVolumes = []int{50, 30, 80, 80, 60, 40, 60, 40, 60, 60, 60}
+var DefaultFillVolumes = []int{0, 50, 30, 80, 80, 60, 40, 60, 40, 60, 60, 60, 50, 50, 60, 80}
 
 // DefaultSelectorCoords — начальные координаты отверстий второго селектора по умолчанию (0..14).
 var DefaultSelectorCoords = []int{

@@ -7,57 +7,59 @@ import (
 	"modbus-configurator/model"
 )
 
-// TestValidateStepParamsRanges проверяет границы валидации параметров шага (1..11, exposure 1..600, volume 1..6000).
+// TestValidateStepParamsRanges проверяет границы валидации параметров шага (0..15, exposure 0..600, volume 0..6000).
 func TestValidateStepParamsRanges(t *testing.T) {
-	// 1. Валидный случай (номер 1, экспозиция 60с, объём 1500 мл*10)
-	err := validateStepParams(1, 60, 1500)
+	// 1. Валидный случай (шаг 0 — экспозиция образца, 0с, 0 мл*10)
+	err := validateStepParams(0, 0, 0)
+	testutil.AssertNil(t, err, "Валидный шаг 0 не должен возвращать ошибку")
+
+	// 2. Валидный случай (номер 1, экспозиция 60с, объём 1500 мл*10)
+	err = validateStepParams(1, 60, 1500)
 	testutil.AssertNil(t, err, "Валидный шаг 1 не должен возвращать ошибку")
 
-	// 2. Валидные граничные значения
-	err = validateStepParams(11, 600, 6000)
-	testutil.AssertNil(t, err, "Максимальные валидные параметры 11, 600, 6000")
+	// 3. Валидные граничные значения (шаг 15)
+	err = validateStepParams(15, 600, 6000)
+	testutil.AssertNil(t, err, "Максимальные валидные параметры 15, 600, 6000")
 
-	err = validateStepParams(1, 1, 1)
-	testutil.AssertNil(t, err, "Минимальные валидные параметры 1, 1, 1")
+	// 4. Невалидные номера шагов
+	err = validateStepParams(-1, 60, 1500)
+	testutil.AssertNotNil(t, err, "Шаг -1 должен вызывать ошибку валидации")
 
-	// 3. Невалидные номера шагов
-	err = validateStepParams(0, 60, 1500)
-	testutil.AssertNotNil(t, err, "Шаг 0 должен вызывать ошибку валидации")
+	err = validateStepParams(16, 60, 1500)
+	testutil.AssertNotNil(t, err, "Шаг 16 должен вызывать ошибку валидации")
 
-	err = validateStepParams(12, 60, 1500)
-	testutil.AssertNotNil(t, err, "Шаг 12 должен вызывать ошибку валидации")
-
-	// 4. Невалидная экспозиция
+	// 5. Невалидная экспозиция
 	err = validateStepParams(1, 0, 1500)
-	testutil.AssertNotNil(t, err, "Экспозиция 0 сек должна вызывать ошибку")
+	testutil.AssertNotNil(t, err, "Экспозиция 0 сек для шага 1 должна вызывать ошибку")
 
-	err = validateStepParams(1, 601, 1500)
+	err = validateStepParams(0, 601, 0)
 	testutil.AssertNotNil(t, err, "Экспозиция > 600 сек должна вызывать ошибку")
 
-	// 5. Невалидный объём налива
+	// 6. Невалидный объём налива
 	err = validateStepParams(1, 60, 0)
-	testutil.AssertNotNil(t, err, "Объём 0 должен вызывать ошибку")
+	testutil.AssertNotNil(t, err, "Объём 0 для шага 1 должен вызывать ошибку")
 
 	err = validateStepParams(1, 60, 6001)
 	testutil.AssertNotNil(t, err, "Объём > 6000 должен вызывать ошибку")
 }
 
-// TestStainStepNamesLengthVerifies11Steps проверяет соответствие имён шагов протокола 11 шагам Папаниколау.
-func TestStainStepNamesLengthVerifies11Steps(t *testing.T) {
-	testutil.AssertEqual(t, len(StainStepNames), 11, "Массив StainStepNames должен содержать ровно 11 элементов")
-	testutil.AssertEqual(t, StainStepNames[0], "Спирт 96% (фиксация)", "Шаг 1: Спирт 96% (фиксация)")
-	testutil.AssertEqual(t, StainStepNames[1], "Гематоксилин Харриса", "Шаг 2: Гематоксилин Харриса")
-	testutil.AssertEqual(t, StainStepNames[10], "Спирт 96%", "Шаг 11: Спирт 96%")
+// TestStainStepNamesLengthVerifies16Steps проверяет соответствие имён шагов протокола 16 шагам (0..15).
+func TestStainStepNamesLengthVerifies16Steps(t *testing.T) {
+	testutil.AssertEqual(t, len(StainStepNames), 16, "Массив StainStepNames должен содержать ровно 16 элементов")
+	testutil.AssertEqual(t, StainStepNames[0], "Экспозиция образца", "Шаг 0: Экспозиция образца")
+	testutil.AssertEqual(t, StainStepNames[1], "Спирт 96% (фиксация)", "Шаг 1: Спирт 96% (фиксация)")
+	testutil.AssertEqual(t, StainStepNames[12], "Хлорка", "Шаг 12: Хлорка")
+	testutil.AssertEqual(t, StainStepNames[15], "Вода", "Шаг 15: Вода")
 }
 
 // TestDefaultExposureAndVolumeArrays проверяет инициализацию массивов экспозиций и объёмов по умолчанию.
 func TestDefaultExposureAndVolumeArrays(t *testing.T) {
-	testutil.AssertEqual(t, len(DefaultExposureTimes), 11, "Массив экспозиций должен иметь длину 11")
-	testutil.AssertEqual(t, len(DefaultFillVolumes), 11, "Массив объёмов должен иметь длину 11")
+	testutil.AssertEqual(t, len(DefaultExposureTimes), 16, "Массив экспозиций должен иметь длину 16")
+	testutil.AssertEqual(t, len(DefaultFillVolumes), 16, "Массив объёмов должен иметь длину 16")
 
-	for i := 0; i < 11; i++ {
-		err := validateStepParams(i+1, DefaultExposureTimes[i], DefaultFillVolumes[i])
-		testutil.AssertNil(t, err, "Стандартные параметры всех 11 шагов обязаны быть валидными")
+	for i := 0; i < 16; i++ {
+		err := validateStepParams(i, DefaultExposureTimes[i], DefaultFillVolumes[i])
+		testutil.AssertNil(t, err, "Стандартные параметры всех 16 шагов обязаны быть валидными")
 	}
 }
 

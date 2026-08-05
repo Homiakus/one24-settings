@@ -12,7 +12,10 @@ import (
 // ─── Статус и подключение ─────────────────────────────────────────────────────
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
-	connected := s.modbus != nil && s.modbus.Connected()
+	s.modbusMu.RLock()
+	mb := s.modbus
+	s.modbusMu.RUnlock()
+	connected := mb != nil && mb.Connected()
 
 	s.lockState()
 	s.state.Connection.Connected = connected
@@ -28,11 +31,11 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if connected {
-		ready, err := s.modbus.ReadRegister(1)
+		ready, err := mb.ReadRegister(1)
 		if err == nil {
 			data["ready_status"] = ready
 		}
-		errCode, err := s.modbus.ReadRegister(5)
+		errCode, err := mb.ReadRegister(5)
 		if err == nil {
 			data["status_error"] = errCode
 			if errCode != 0 {
@@ -65,6 +68,7 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 		req.SlaveID = 1
 	}
 
+	s.modbusMu.Lock()
 	if s.modbus != nil {
 		s.modbus.Close()
 	}
@@ -76,6 +80,7 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 
 	client, err := mb.NewClient(cfg, mb.DefaultRetryConfig())
 	if err != nil {
+		s.modbusMu.Unlock()
 		s.lockState()
 		s.state.Connection.ErrorsCount++
 		s.state.Connection.LastError = err.Error()
@@ -86,6 +91,7 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.modbus = client
+	s.modbusMu.Unlock()
 	s.lockState()
 	s.state.Connection.Port = req.Port
 	s.state.Connection.Baudrate = req.Baudrate
@@ -103,9 +109,12 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDisconnect(w http.ResponseWriter, r *http.Request) {
+	s.modbusMu.Lock()
 	if s.modbus != nil {
 		s.modbus.Close()
+		s.modbus = nil
 	}
+	s.modbusMu.Unlock()
 	s.lockState()
 	s.state.Connection.Connected = false
 	s.unlockState()
@@ -136,21 +145,33 @@ func (s *Server) handleGetSteps(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGetStep(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	id := atoi(idStr)
-	if id < 1 || id > 11 {
-		jsonError(w, http.StatusBadRequest, "id должен быть 1..11")
+	if id < 0 || id > 15 {
+		jsonError(w, http.StatusBadRequest, "id должен быть 0..15")
 		return
 	}
 	s.rlockState()
-	step := s.state.Steps[id-1]
+	var step model.StepParams
+	found := false
+	for _, st := range s.state.Steps {
+		if st.ID == id {
+			step = st
+			found = true
+			break
+		}
+	}
 	s.runlockState()
+	if !found {
+		jsonError(w, http.StatusNotFound, "шаг не найден")
+		return
+	}
 	jsonOK(w, step)
 }
 
 func (s *Server) handlePutStep(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	id := atoi(idStr)
-	if id < 1 || id > 11 {
-		jsonError(w, http.StatusBadRequest, "id должен быть 1..11")
+	if id < 0 || id > 15 {
+		jsonError(w, http.StatusBadRequest, "id должен быть 0..15")
 		return
 	}
 
@@ -162,21 +183,39 @@ func (s *Server) handlePutStep(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusBadRequest, "неверный JSON")
 		return
 	}
-	if req.ExposureTime < 1 || req.ExposureTime > 600 {
-		jsonError(w, http.StatusBadRequest, "exposure_time должен быть 1..600 сек")
+
+	minVal := 1
+	if id == 0 {
+		minVal = 0
+	}
+	if req.ExposureTime < minVal || req.ExposureTime > 600 {
+		jsonError(w, http.StatusBadRequest, "exposure_time должен быть "+itoa(minVal)+"..600 сек")
 		return
 	}
-	if req.FillVolume < 1 || req.FillVolume > 6000 {
-		jsonError(w, http.StatusBadRequest, "fill_volume должен быть 1..6000 (мл×10)")
+	if req.FillVolume < minVal || req.FillVolume > 6000 {
+		jsonError(w, http.StatusBadRequest, "fill_volume должен быть "+itoa(minVal)+"..6000 (мл×10)")
 		return
 	}
 
 	s.lockState()
-	s.state.Steps[id-1].ExposureTime = req.ExposureTime
-	s.state.Steps[id-1].FillVolume = req.FillVolume
-	s.state.Steps[id-1].Dirty = true
-	step := s.state.Steps[id-1]
+	var step model.StepParams
+	found := false
+	for i := range s.state.Steps {
+		if s.state.Steps[i].ID == id {
+			s.state.Steps[i].ExposureTime = req.ExposureTime
+			s.state.Steps[i].FillVolume = req.FillVolume
+			s.state.Steps[i].Dirty = true
+			step = s.state.Steps[i]
+			found = true
+			break
+		}
+	}
 	s.unlockState()
+
+	if !found {
+		jsonError(w, http.StatusNotFound, "шаг не найден")
+		return
+	}
 
 	s.addLog("INFO", "Шаг "+idStr+" изменён: t="+strconv.Itoa(req.ExposureTime)+"с, v="+strconv.Itoa(req.FillVolume))
 	jsonOK(w, step)

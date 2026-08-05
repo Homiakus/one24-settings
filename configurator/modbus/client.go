@@ -1,6 +1,7 @@
 package modbus
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -205,10 +206,6 @@ func (c *Client) Recover() error {
 }
 
 func isModbusException(err error) bool {
-	if err == nil {
-		return false
-	}
-	type exception interface{ ExceptionCode() uint8 }
-	_, ok := err.(exception)
-	return ok
+	var mbErr *gmodbus.ModbusError
+	return errors.As(err, &mbErr)
 }

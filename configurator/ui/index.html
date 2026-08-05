@@ -21,19 +21,16 @@
 
     <nav class="sb-nav" aria-label="Разделы конфигуратора">
       <button class="sb-item active" type="button" data-tab="settings" aria-controls="tab-settings" aria-current="page">
-        <span class="sb-code" aria-hidden="true">01</span><span>Протокол окраски</span>
-      </button>
-      <button class="sb-item" type="button" data-tab="valves" aria-controls="tab-valves">
-        <span class="sb-code" aria-hidden="true">02</span><span>Координаты клапанов</span>
+        <span class="sb-code" aria-hidden="true">01</span><span>Настройки (Протокол и Клапаны)</span>
       </button>
       <button class="sb-item" type="button" data-tab="programs" aria-controls="tab-programs">
-        <span class="sb-code" aria-hidden="true">03</span><span>Программы и сервис</span>
+        <span class="sb-code" aria-hidden="true">02</span><span>Программы и сервис</span>
       </button>
       <button class="sb-item" type="button" data-tab="testing" aria-controls="tab-testing">
-        <span class="sb-code" aria-hidden="true">04</span><span>Датчики</span>
+        <span class="sb-code" aria-hidden="true">03</span><span>Датчики</span>
       </button>
       <button class="sb-item" type="button" data-tab="diagnostics" aria-controls="tab-diagnostics">
-        <span class="sb-code" aria-hidden="true">05</span><span>Диагностика</span>
+        <span class="sb-code" aria-hidden="true">04</span><span>Диагностика</span>
       </button>
     </nav>
 
@@ -50,7 +47,7 @@
     <header class="topbar">
       <div>
         <div class="eyebrow">ONEPAP.24 / сервисный режим</div>
-        <h1 id="tb-page">Протокол окраски</h1>
+        <h1 id="tb-page">Настройки (Протокол и Клапаны)</h1>
       </div>
       <div class="topbar-meta">
         <span id="ws-status" class="meta-state">Телеметрия: подключение…</span>
@@ -108,24 +105,27 @@
     </section>
 
     <div class="content" id="content" tabindex="-1">
-      <section class="tab-panel active" id="tab-settings" data-title="Протокол окраски">
+      <section class="tab-panel active" id="tab-settings" data-title="Настройки (Протокол и Клапаны)">
         <div class="page-intro">
           <div>
-            <p class="eyebrow">Ежедневная настройка</p>
-            <h2>Параметры Папаниколау</h2>
-            <p>Сначала прочитайте значения из контроллера. Изменённые поля отмечаются и записываются отдельно.</p>
+            <p class="eyebrow">Единое окно конфигурации</p>
+            <h2>Параметры протокола и координаты клапанов</h2>
+            <p>Экспозиция образца (Шаг 0), шаги Папаниколау и координаты селекторов в одном окне.</p>
           </div>
           <div class="page-actions">
             <span class="change-counter" id="settings-dirty-count">Изменений нет</span>
+            <span class="change-counter" id="valves-dirty-count" hidden>Изменений нет</span>
             <button id="btn-read-all" class="btn btn-secondary requires-connection" type="button" disabled>Прочитать из контроллера</button>
             <button id="btn-write-all" class="btn btn-primary requires-connection" type="button" disabled>Записать изменения</button>
+            <button id="btn-read-valves" hidden type="button"></button>
+            <button id="btn-write-valves" hidden type="button"></button>
           </div>
         </div>
 
         <div class="work-panel">
           <div class="panel-heading">
             <div>
-              <h3>11 шагов окраски</h3>
+              <h3>Параметры экспозиции и налива (Шаги 0–15: Экспозиция образца, 11 шагов Папаниколау, 4 шага Промывки)</h3>
               <p id="settings-source">Показаны значения по умолчанию, не подтверждённые контроллером.</p>
             </div>
             <span class="state-label" id="settings-state">Не прочитано</span>
@@ -146,20 +146,10 @@
             <span class="operation-message" id="settings-log" role="status"></span>
           </div>
         </div>
-      </section>
 
-      <section class="tab-panel" id="tab-valves" data-title="Координаты клапанов" hidden>
-        <div class="page-intro">
-          <div>
-            <p class="eyebrow">Пусконаладка</p>
-            <h2>Координаты переключающих клапанов</h2>
-            <p>Редактируйте только проверенные позиции. Перед записью контроллер должен быть свободен.</p>
-          </div>
-          <div class="page-actions">
-            <span class="change-counter" id="valves-dirty-count">Изменений нет</span>
-            <button id="btn-read-valves" class="btn btn-secondary requires-connection" type="button" disabled>Прочитать координаты</button>
-            <button id="btn-write-valves" class="btn btn-primary requires-connection" type="button" disabled>Записать изменения</button>
-          </div>
+        <div class="valves-section-title" style="margin-top:24px;margin-bottom:12px;">
+          <h3 style="margin:0;font-size:16px;color:var(--text);">Координаты переключающих клапанов</h3>
+          <p style="margin:4px 0 0 0;font-size:12px;color:var(--text-3);">15 положений для каждого селектора (включая исходное).</p>
         </div>
 
         <div class="valves-grid">
@@ -177,6 +167,10 @@
           </div>
         </div>
         <div class="operation-message standalone-message" id="valves-log" role="status"></div>
+      </section>
+
+      <section class="tab-panel" id="tab-valves" data-title="Координаты клапанов" hidden>
+        <!-- Содержимое клапанов теперь в едином окне tab-settings -->
       </section>
 
       <section class="tab-panel" id="tab-programs" data-title="Программы и сервис" hidden>
@@ -230,20 +224,20 @@
                 <button id="sel-btn-2" class="segment" type="button" aria-pressed="false">Селектор 2</button>
               </div>
               <div class="sel-hole-grid">
-                <button class="sel-hole-btn" data-hole="1" type="button"><span>Спирт 96%</span><small>1</small></button>
-                <button class="sel-hole-btn" data-hole="2" type="button"><span>Гематоксилин</span><small>2</small></button>
-                <button class="sel-hole-btn" data-hole="3" type="button"><span>Вода</span><small>3</small></button>
+                <button class="sel-hole-btn" data-hole="1" type="button"><span>Воздух</span><small>1</small></button>
+                <button class="sel-hole-btn" data-hole="2" type="button"><span>EA-50</span><small>2</small></button>
+                <button class="sel-hole-btn" data-hole="3" type="button"><span>Воздух</span><small>3</small></button>
                 <button class="sel-hole-btn" data-hole="4" type="button"><span>Вода</span><small>4</small></button>
-                <button class="sel-hole-btn" data-hole="5" type="button"><span>Спирт 87%</span><small>5</small></button>
-                <button class="sel-hole-btn" data-hole="6" type="button"><span>OG-6</span><small>6</small></button>
-                <button class="sel-hole-btn" data-hole="7" type="button"><span>Спирт 96%</span><small>7</small></button>
-                <button class="sel-hole-btn" data-hole="8" type="button"><span>EA-50</span><small>8</small></button>
-                <button class="sel-hole-btn" data-hole="9" type="button"><span>Спирт 87%</span><small>9</small></button>
-                <button class="sel-hole-btn" data-hole="10" type="button"><span>Спирт 87%</span><small>10</small></button>
-                <button class="sel-hole-btn" data-hole="11" type="button"><span>Спирт 96%</span><small>11</small></button>
-                <button class="sel-hole-btn" data-hole="12" type="button"><span>Хлорка</span><small>12</small></button>
-                <button class="sel-hole-btn" data-hole="13" type="button"><span>Хлорка</span><small>13</small></button>
-                <button class="sel-hole-btn" data-hole="14" type="button"><span>Вода</span><small>14</small></button>
+                <button class="sel-hole-btn" data-hole="5" type="button"><span>Воздух</span><small>5</small></button>
+                <button class="sel-hole-btn" data-hole="6" type="button"><span>Спирт 87%</span><small>6</small></button>
+                <button class="sel-hole-btn" data-hole="7" type="button"><span>Воздух</span><small>7</small></button>
+                <button class="sel-hole-btn" data-hole="8" type="button"><span>Спирт 96%</span><small>8</small></button>
+                <button class="sel-hole-btn" data-hole="9" type="button"><span>Воздух</span><small>9</small></button>
+                <button class="sel-hole-btn" data-hole="10" type="button"><span>OG-6</span><small>10</small></button>
+                <button class="sel-hole-btn" data-hole="11" type="button"><span>Воздух</span><small>11</small></button>
+                <button class="sel-hole-btn" data-hole="12" type="button"><span>Гематоксилин</span><small>12</small></button>
+                <button class="sel-hole-btn" data-hole="13" type="button"><span>Воздух</span><small>13</small></button>
+                <button class="sel-hole-btn" data-hole="14" type="button"><span>Хлорка</span><small>14</small></button>
               </div>
               <div class="service-status" id="sel-status">Текущая позиция не подтверждена контроллером.</div>
               <div class="service-actions">

@@ -7,23 +7,23 @@ import (
 
 // EnvironmentInfo содержит данные о текущем оборудовании и среде исполнения.
 type EnvironmentInfo struct {
-	GoVersion  string
-	OS         string
-	Arch       string
-	NumCPU     int
-	MaxProcs   int
-	Compiler   string
+	GoVersion string
+	OS        string
+	Arch      string
+	NumCPU    int
+	MaxProcs  int
+	Compiler  string
 }
 
 // GetEnvironmentInfo собирает системные метрики.
 func GetEnvironmentInfo() EnvironmentInfo {
 	return EnvironmentInfo{
-		GoVersion:  runtime.Version(),
-		OS:         runtime.GOOS,
-		Arch:       runtime.GOARCH,
-		NumCPU:     runtime.NumCPU(),
-		MaxProcs:   runtime.GOMAXPROCS(0),
-		Compiler:   runtime.Compiler,
+		GoVersion: runtime.Version(),
+		OS:        runtime.GOOS,
+		Arch:      runtime.GOARCH,
+		NumCPU:    runtime.NumCPU(),
+		MaxProcs:  runtime.GOMAXPROCS(0),
+		Compiler:  runtime.Compiler,
 	}
 }
 

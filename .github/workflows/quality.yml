@@ -93,9 +93,11 @@ jobs:
           node --check ui/app-settings.js
           node --check ui/app-operations.js
           node --check ui/app-profile.js
-      - name: Validate example JSON profile
+      - name: Validate JSON profiles
         shell: pwsh
-        run: Get-Content .\profiles\onepap24-settings.example.json -Raw | ConvertFrom-Json | Out-Null
+        run: |
+          Get-Content .\profiles\onepap24-test.json -Raw | ConvertFrom-Json | Out-Null
+          Get-Content .\profiles\onepap24-full.json -Raw | ConvertFrom-Json | Out-Null
       - name: Download modules
         run: go mod download
       - name: Build configurator

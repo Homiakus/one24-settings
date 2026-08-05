@@ -29,25 +29,55 @@
     return value.trim();
   }
 
-  function normalizeSteps(items) {
-    if (!Array.isArray(items) || items.length !== 11) {
-      throw new Error('staining.steps: требуется ровно 11 шагов');
-    }
-    const seen = new Set();
-    const result = items.map((item, index) => {
-      if (!isObject(item)) throw new Error(`staining.steps[${index}]: требуется объект`);
-      assertAllowedKeys(item, ['id', 'name', 'exposure_time', 'fill_volume'], `staining.steps[${index}]`);
-      const id = integer(item.id, 1, 11, `staining.steps[${index}].id`);
-      if (seen.has(id)) throw new Error(`staining.steps: повторяется id ${id}`);
-      seen.add(id);
-      return {
-        id,
-        name: text(item.name, `staining.steps[${index}].name`),
-        exposure_time: integer(item.exposure_time, 1, 600, `staining.steps[${index}].exposure_time`),
-        fill_volume: integer(item.fill_volume, 1, 6000, `staining.steps[${index}].fill_volume`)
-      };
+  // NB: эталонные значения в configurator/modbus/registers.go
+  const STAIN_DEFAULTS = [
+    ['Экспозиция образца', 0, 0],
+    ['Спирт 96% (фиксация)', 10, 50],
+    ['Гематоксилин Харриса', 120, 30],
+    ['Вода дистиллированная', 10, 80],
+    ['Вода дистиллированная', 50, 80],
+    ['Спирт 87%', 10, 60],
+    ['OG-6 (оранжевый G)', 10, 40],
+    ['Спирт 96%', 10, 60],
+    ['EA-50', 120, 40],
+    ['Спирт 87%', 10, 60],
+    ['Спирт 87%', 10, 60],
+    ['Спирт 96%', 10, 60],
+    ['Хлорка', 20, 50],
+    ['Хлорка', 20, 50],
+    ['Спирт', 10, 60],
+    ['Вода', 10, 80]
+  ];
+
+  function normalizeSteps(items, sampleExp = 0) {
+    if (!Array.isArray(items)) throw new Error('staining.steps: требуется массив шагов');
+    let rawMap = new Map();
+    items.forEach((item, index) => {
+      if (isObject(item)) {
+        const id = item.id !== undefined ? Number(item.id) : index;
+        rawMap.set(id, item);
+      }
     });
-    return result.sort((a, b) => a.id - b.id);
+
+    const result = [];
+    for (let id = 0; id <= 15; id++) {
+      const def = STAIN_DEFAULTS[id];
+      const item = rawMap.get(id);
+      const minVal = id === 0 ? 0 : 1;
+      let exp = def[1], vol = def[2], name = def[0];
+
+      if (id === 0) exp = sampleExp;
+
+      if (item) {
+        assertAllowedKeys(item, ['id', 'name', 'exposure_time', 'fill_volume'], `staining.steps[${id}]`);
+        name = text(item.name, `staining.steps[${id}].name`);
+        exp = integer(item.exposure_time, minVal, 600, `staining.steps[${id}].exposure_time`);
+        vol = integer(item.fill_volume, minVal, 6000, `staining.steps[${id}].fill_volume`);
+      }
+
+      result.push({ id, name, exposure_time: exp, fill_volume: vol });
+    }
+    return result;
   }
 
   function normalizeSelector(items, selector) {
@@ -100,12 +130,21 @@
     };
 
     if (!isObject(raw.staining)) throw new Error('staining: требуется объект');
-    assertAllowedKeys(raw.staining, ['protocol', 'reagent_empty_delta', 'steps'], 'staining');
+    assertAllowedKeys(raw.staining, ['protocol', 'reagent_empty_delta', 'sample_exposure_time', 'steps'], 'staining');
     if (raw.staining.protocol !== 'pap_stain') throw new Error('staining.protocol: поддерживается только "pap_stain"');
+
+    const sampleExp = raw.staining.sample_exposure_time !== undefined
+      ? integer(raw.staining.sample_exposure_time, 0, 600, 'staining.sample_exposure_time')
+      : 0;
+
+    const normalizedSteps = normalizeSteps(raw.staining.steps, sampleExp);
+    const step0Exp = normalizedSteps.find(s => s.id === 0)?.exposure_time ?? sampleExp;
+
     const staining = {
       protocol: 'pap_stain',
       reagent_empty_delta: integer(raw.staining.reagent_empty_delta, 0, 255, 'staining.reagent_empty_delta'),
-      steps: normalizeSteps(raw.staining.steps)
+      sample_exposure_time: step0Exp,
+      steps: normalizedSteps
     };
 
     if (!isObject(raw.selectors)) throw new Error('selectors: требуется объект');
@@ -139,17 +178,14 @@
     coord
   }));
 
-  const STAIN_NAMES = [
-    "Спирт 96% (фиксация)", "Гематоксилин Харриса", "Вода дистиллированная", "Вода дистиллированная",
-    "Спирт 87%", "OG-6", "Спирт 96%", "EA-50", "Спирт 87%", "Спирт 87%", "Спирт 96%"
-  ];
-  const FULL_EXP = [10, 120, 10, 50, 10, 10, 10, 120, 10, 10, 10];
-  const FILL_VOLS = [50, 30, 80, 80, 60, 40, 60, 40, 60, 60, 60];
+  const STAIN_NAMES = STAIN_DEFAULTS.map(d => d[0]);
+  const FULL_EXP = STAIN_DEFAULTS.map(d => d[1]);
+  const FILL_VOLS = STAIN_DEFAULTS.map(d => d[2]);
 
   const buildStepsList = (expTime) => STAIN_NAMES.map((name, i) => ({
-    id: i + 1,
+    id: i,
     name,
-    exposure_time: typeof expTime === 'number' ? expTime : FULL_EXP[i],
+    exposure_time: i === 0 ? 0 : (typeof expTime === 'number' ? expTime : FULL_EXP[i]),
     fill_volume: FILL_VOLS[i]
   }));
 
@@ -387,7 +423,7 @@
 
   async function boot() {
     for (let attempt = 0; attempt < 100; attempt += 1) {
-      if (Array.isArray(O.state.steps) && O.state.steps.length === 11
+      if (Array.isArray(O.state.steps) && O.state.steps.length === 16
         && Array.isArray(O.state.valves1) && O.state.valves1.length === 15
         && Array.isArray(O.state.valves2) && O.state.valves2.length === 15) {
         createUI();

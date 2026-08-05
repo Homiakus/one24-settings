@@ -201,7 +201,7 @@
   function connectWebSocket() {
     if (ws && [WebSocket.OPEN, WebSocket.CONNECTING].includes(ws.readyState)) return;
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    ws = new WebSocket(`${protocol}//${location.host}/ws/events?topics=status,progress,sensors,reagent,error,log`);
+    ws = new WebSocket(`${protocol}//${location.host}/ws/events?topics=status,progress,sensors,reagent,reagent_low,error,log`);
     O.text('#ws-status', 'Телеметрия: подключение…');
     ws.onopen = () => { O.state.wsAttempt = 0; O.text('#ws-status', 'Телеметрия: активна'); };
     ws.onmessage = (event) => {
