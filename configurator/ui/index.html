@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="dark">
   <title>ONEPAP.24 — сервисный конфигуратор</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='4' fill='%2312161c'/><text x='50%25' y='55%25' dominant-baseline='middle' text-anchor='middle' font-family='monospace' font-size='18' font-weight='bold' fill='%234c9aff'>24</text></svg>">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -26,11 +27,14 @@
       <button class="sb-item" type="button" data-tab="programs" aria-controls="tab-programs">
         <span class="sb-code" aria-hidden="true">02</span><span>Программы и сервис</span>
       </button>
+      <button class="sb-item" type="button" data-tab="sequence" aria-controls="tab-sequence">
+        <span class="sb-code" aria-hidden="true">03</span><span>Сценарии и цепочки</span>
+      </button>
       <button class="sb-item" type="button" data-tab="testing" aria-controls="tab-testing">
-        <span class="sb-code" aria-hidden="true">03</span><span>Датчики</span>
+        <span class="sb-code" aria-hidden="true">04</span><span>Датчики</span>
       </button>
       <button class="sb-item" type="button" data-tab="diagnostics" aria-controls="tab-diagnostics">
-        <span class="sb-code" aria-hidden="true">04</span><span>Диагностика</span>
+        <span class="sb-code" aria-hidden="true">05</span><span>Диагностика</span>
       </button>
     </nav>
 
@@ -80,6 +84,7 @@
         </div>
       </form>
       <div class="device-registers" aria-label="Состояние контроллера">
+        <div><span>Зона</span><strong id="kpi-zone">3</strong></div>
         <div><span>Ready</span><strong id="kpi-ready">—</strong></div>
         <div><span>Ошибка</span><strong id="kpi-error">—</strong></div>
       </div>
@@ -96,11 +101,19 @@
 
     <section class="global-progress" id="global-progress" hidden aria-live="polite">
       <div class="progress-copy">
-        <strong id="gp-title">Операция выполняется</strong>
-        <span id="gp-text"></span>
+        <div class="progress-info">
+          <strong id="gp-title">Операция выполняется</strong>
+          <span id="gp-text"></span>
+        </div>
+        <div class="progress-badge">
+          <span id="gp-chip" class="progress-chip">0/0</span>
+          <span id="gp-percent" class="progress-percent">0%</span>
+        </div>
       </div>
       <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="gp-track">
-        <div class="progress-fill" id="gp-fill"></div>
+        <div class="progress-fill" id="gp-fill">
+          <div class="progress-glow"></div>
+        </div>
       </div>
     </section>
 
@@ -113,6 +126,14 @@
             <p>Экспозиция образца (Шаг 0), шаги Папаниколау и координаты селекторов в одном окне.</p>
           </div>
           <div class="page-actions">
+            <label class="zone-label">Зона:
+              <select id="zone-select" class="inp" style="width:auto;padding:4px 8px;">
+                <option value="1">1 — первая</option>
+                <option value="2">2 — вторая</option>
+                <option value="3" selected>3 — обе</option>
+              </select>
+            </label>
+            <button id="btn-send-zone" class="btn btn-secondary requires-connection" type="button" disabled>Отправить зону</button>
             <span class="change-counter" id="settings-dirty-count">Изменений нет</span>
             <span class="change-counter" id="valves-dirty-count" hidden>Изменений нет</span>
             <button id="btn-read-all" class="btn btn-secondary requires-connection" type="button" disabled>Прочитать из контроллера</button>
@@ -180,6 +201,17 @@
             <h2>Запуск программ</h2>
             <p>Штатные программы отделены от ручных сервисных операций и сброса контроллера.</p>
           </div>
+          <div class="page-actions" style="margin-right:auto;display:flex;align-items:center;gap:8px;">
+            <label class="zone-label">Активная зона:
+              <select id="zone-select-prog" class="inp" style="width:auto;padding:4px 8px;">
+                <option value="1">1 — первая</option>
+                <option value="2">2 — вторая</option>
+                <option value="3" selected>3 — обе</option>
+              </select>
+            </label>
+            <button id="btn-send-zone-prog" class="btn btn-secondary requires-connection" type="button" disabled>Отправить зону</button>
+          </div>
+          <div class="emergency-separator" aria-hidden="true"></div>
           <button id="btn-emergency" class="btn btn-danger requires-connection" type="button" disabled>Аварийный останов</button>
         </div>
 
@@ -211,9 +243,24 @@
               <button class="btn btn-danger-quiet prog-btn requires-connection" data-prog="stain-stop" type="button" disabled>Остановить цикл</button>
             </div>
             <div class="progress-wrap" id="progress-wrap" hidden>
-              <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
-              <div class="progress-text" id="progress-text"></div>
-            </div>
+              <div class="progress-card">
+                <div class="progress-card-header">
+                  <div class="progress-card-title">
+                    <span class="pulse-dot"></span>
+                    <strong id="prog-card-title">Выполнение цикла</strong>
+                  </div>
+                  <span class="progress-percent-badge" id="prog-percent">0%</span>
+                </div>
+                <div class="progress-track" role="progressbar">
+                  <div class="progress-fill" id="progress-fill">
+                    <div class="progress-glow"></div>
+                  </div>
+                </div>
+                <div class="progress-card-footer">
+                  <span class="progress-text" id="progress-text"></span>
+                  <span class="progress-chip" id="prog-chip">0/0</span>
+                </div>
+              </div>
           </div>
 
           <details class="work-panel service-panel">
@@ -256,6 +303,72 @@
         </div>
       </section>
 
+      <!-- DEDICATED SEQUENCE BUILDER TAB -->
+      <section class="tab-panel" id="tab-sequence" data-title="Сценарии и последовательности" hidden>
+        <div class="page-intro">
+          <div>
+            <p class="eyebrow">Конструктор процессов</p>
+            <h2>Сценарии и последовательности команд</h2>
+            <p>Создавайте, редактируйте и запускайте собственные цепочки Modbus-команд для автоматизации и сервиса.</p>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-secondary" id="btn-seq-add" type="button">➕ Добавить шаг</button>
+            <button class="btn btn-secondary" id="btn-seq-reset" type="button">🧹 Сбросить</button>
+            <button class="btn btn-primary requires-connection" id="btn-seq-run" type="button" disabled style="box-shadow: 0 4px 18px rgba(76,154,255,0.4);">▶ Запустить сценарий</button>
+          </div>
+        </div>
+
+        <!-- Presets Quick Bar -->
+        <div class="presets-bar" style="margin-bottom: 20px;">
+          <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3); margin-bottom: 10px;">Быстрая загрузка шаблонов:</div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px;">
+            <button class="btn btn-secondary seq-preset-btn" data-preset="sys_check" type="button" style="display: flex; align-items: center; justify-content: flex-start; gap: 10px; padding: 12px 14px; text-align: left; height: auto;">
+              <span style="font-size: 20px;">⚡</span>
+              <div>
+                <strong style="display: block; font-size: 13px; color: var(--text);">Проверка системы</strong>
+                <small style="color: var(--text-3);">4 шага · Калибровки и слив</small>
+              </div>
+            </button>
+            <button class="btn btn-secondary seq-preset-btn" data-preset="stain_cycle" type="button" style="display: flex; align-items: center; justify-content: flex-start; gap: 10px; padding: 12px 14px; text-align: left; height: auto;">
+              <span style="font-size: 20px;">🧪</span>
+              <div>
+                <strong style="display: block; font-size: 13px; color: var(--text);">Цикл Папаниколау</strong>
+                <small style="color: var(--text-3);">5 шагов · Полная окраска</small>
+              </div>
+            </button>
+            <button class="btn btn-secondary seq-preset-btn" data-preset="wash_system" type="button" style="display: flex; align-items: center; justify-content: flex-start; gap: 10px; padding: 12px 14px; text-align: left; height: auto;">
+              <span style="font-size: 20px;">🧽</span>
+              <div>
+                <strong style="display: block; font-size: 13px; color: var(--text);">Глубокая промывка</strong>
+                <small style="color: var(--text-3);">4 шага · Дезинфекция</small>
+              </div>
+            </button>
+            <button class="btn btn-secondary seq-preset-btn" data-preset="calib_full" type="button" style="display: flex; align-items: center; justify-content: flex-start; gap: 10px; padding: 12px 14px; text-align: left; height: auto;">
+              <span style="font-size: 20px;">🎯</span>
+              <div>
+                <strong style="display: block; font-size: 13px; color: var(--text);">Полная калибровка</strong>
+                <small style="color: var(--text-3);">4 шага · Клапаны и ротор</small>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Sequence Timeline Work Panel -->
+        <div class="work-panel" style="padding: 20px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; padding-bottom: 14px; border-bottom: 1px solid var(--border);">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <span class="progress-chip" id="seq-total-steps">Всего шагов: 0</span>
+              <span class="muted" id="seq-est-time" style="font-size: 13px;">Ориентировочное время: ~0 мин</span>
+            </div>
+            <span class="muted" style="font-size: 12px;">Настройте шаги команды ниже и нажмите «Запустить сценарий»</span>
+          </div>
+
+          <div id="seq-step-cards-container" style="display: grid; gap: 14px;">
+            <!-- Visual Cards for each step dynamically rendered here -->
+          </div>
+        </div>
+      </section>
+
       <section class="tab-panel" id="tab-testing" data-title="Датчики" hidden>
         <div class="page-intro">
           <div><p class="eyebrow">Проверка входов</p><h2>Датчики и измерения</h2><p>Значения обновляются по телеметрии; кнопка выполняет принудительное чтение.</p></div>
@@ -283,6 +396,7 @@
           <div class="work-panel">
             <div class="panel-heading"><div><h3>Журнал</h3><p>Последние события текущего запуска.</p></div><button id="btn-clear-log" class="btn btn-secondary" type="button">Очистить журнал</button></div>
             <div class="log-container" id="log-container" role="log" aria-live="polite"></div>
+            <div class="log-limit" id="log-limit" aria-live="polite"></div>
           </div>
         </div>
       </section>
@@ -292,7 +406,7 @@
 
 <div id="confirm-modal" class="modal-overlay" hidden>
   <div class="modal-box" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-message">
-    <div class="modal-header"><h2 id="confirm-title">Подтвердите действие</h2></div>
+    <div class="modal-header"><h3 id="confirm-title">Подтвердите действие</h3></div>
     <div class="modal-body" id="confirm-message"></div>
     <div class="modal-actions">
       <button id="confirm-cancel" class="btn btn-secondary" type="button">Отмена</button>
@@ -303,7 +417,7 @@
 
 <div id="reagent-modal" class="modal-overlay" hidden>
   <div class="modal-box" role="alertdialog" aria-modal="true" aria-labelledby="reagent-title" aria-describedby="reagent-modal-msg">
-    <div class="modal-header is-warning"><h2 id="reagent-title">Реагент закончился</h2></div>
+    <div class="modal-header is-warning"><h3 id="reagent-title">Реагент закончился</h3></div>
     <div class="modal-body" id="reagent-modal-msg"></div>
     <div class="modal-actions">
       <button id="btn-reagent-cancel" class="btn btn-danger-quiet" type="button">Отменить цикл</button>

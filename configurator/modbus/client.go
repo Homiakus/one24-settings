@@ -12,13 +12,52 @@ import (
 	gmodbus "github.com/goburrow/modbus"
 )
 
-// Client — обёртка над goburrow/modbus для RTU.
+// Client — обёртка над goburrow/modbus для RTU с гарантией однопоточного исполнения (Single-Worker).
 type Client struct {
-	mu      sync.Mutex
-	handler *gmodbus.RTUClientHandler
-	client  gmodbus.Client
-	cfg     Config
-	retry   RetryConfig
+	handler   *gmodbus.RTUClientHandler
+	client    gmodbus.Client
+	cfg       Config
+	retry     RetryConfig
+	taskQueue chan *modbusTask
+	closeChan chan struct{}
+	closeOnce sync.Once
+}
+
+type reqKind int
+
+const (
+	kindReadReg reqKind = iota
+	kindWriteReg
+	kindReadRegs
+	kindReadFast
+	kindWriteFast
+	kindConnected
+	kindRecover
+	kindExec
+)
+
+type taskResult struct {
+	val uint16
+	arr []uint16
+	any any
+	err error
+}
+
+type modbusTask struct {
+	kind    reqKind
+	addr    uint16
+	value   uint16
+	count   uint16
+	execFn  func() (any, error)
+	resChan chan taskResult
+}
+
+var taskPool = sync.Pool{
+	New: func() any {
+		return &modbusTask{
+			resChan: make(chan taskResult, 1),
+		}
+	},
 }
 
 // RetryConfig — настройки retry для Modbus-операций.
@@ -72,12 +111,83 @@ func NewClient(cfg Config, retry RetryConfig) (*Client, error) {
 		return nil, fmt.Errorf("modbus connect %s: %w", cfg.Port, err)
 	}
 
-	return &Client{
-		handler: handler,
-		client:  gmodbus.NewClient(handler),
-		cfg:     cfg,
-		retry:   retry,
-	}, nil
+	c := &Client{
+		handler:   handler,
+		client:    gmodbus.NewClient(handler),
+		cfg:       cfg,
+		retry:     retry,
+		taskQueue: make(chan *modbusTask, 128),
+		closeChan: make(chan struct{}),
+	}
+
+	go c.workerLoop()
+	return c, nil
+}
+
+const interFrameDelay = 5 * time.Millisecond
+
+func (c *Client) workerLoop() {
+	for {
+		select {
+		case <-c.closeChan:
+			return
+		case task, ok := <-c.taskQueue:
+			if !ok {
+				return
+			}
+			var res taskResult
+			switch task.kind {
+			case kindReadReg:
+				res.val, res.err = c.doReadRegister(task.addr)
+			case kindWriteReg:
+				res.err = c.doWriteRegister(task.addr, task.value)
+			case kindReadRegs:
+				res.arr, res.err = c.doReadRegisters(task.addr, task.count)
+			case kindReadFast:
+				res.val, res.err = c.doReadRegisterFast(task.addr)
+			case kindWriteFast:
+				res.err = c.doWriteRegisterFast(task.addr, task.value)
+			case kindConnected:
+				res.any = c.doConnected()
+			case kindRecover:
+				res.err = c.doRecover()
+			case kindExec:
+				if task.execFn != nil {
+					res.any, res.err = task.execFn()
+				}
+			}
+			time.Sleep(interFrameDelay)
+			task.resChan <- res
+		}
+	}
+}
+
+func (c *Client) dispatch(kind reqKind, addr, value, count uint16, fn func() (any, error)) taskResult {
+	task := taskPool.Get().(*modbusTask)
+	task.kind = kind
+	task.addr = addr
+	task.value = value
+	task.count = count
+	task.execFn = fn
+
+	select {
+	case <-c.closeChan:
+		task.execFn = nil
+		taskPool.Put(task)
+		return taskResult{err: errors.New("modbus client closed")}
+	case c.taskQueue <- task:
+	}
+
+	res := <-task.resChan
+	task.execFn = nil
+	taskPool.Put(task)
+	return res
+}
+
+// Exec выполняет произвольную функцию обмена строго в единственном воркер-потоке Modbus.
+func (c *Client) Exec(fn func() (any, error)) (any, error) {
+	res := c.dispatch(kindExec, 0, 0, 0, fn)
+	return res.any, res.err
 }
 
 // Connected возвращает true если порт открыт и контроллер отвечает.
@@ -85,16 +195,28 @@ func (c *Client) Connected() bool {
 	if c.handler == nil {
 		return false
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	res := c.dispatch(kindConnected, 0, 0, 0, nil)
+	if res.any == nil {
+		return false
+	}
+	return res.any.(bool)
+}
+
+func (c *Client) doConnected() bool {
+	if c.handler == nil {
+		return false
+	}
 	_, err := c.client.ReadHoldingRegisters(1, 1)
 	return err == nil
 }
 
 // ReadRegisterFast — одиночное чтение без retry (для polling-циклов).
 func (c *Client) ReadRegisterFast(addr uint16) (uint16, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	res := c.dispatch(kindReadFast, addr, 0, 1, nil)
+	return res.val, res.err
+}
+
+func (c *Client) doReadRegisterFast(addr uint16) (uint16, error) {
 	results, err := c.client.ReadHoldingRegisters(addr, 1)
 	if err != nil {
 		return 0, err
@@ -105,16 +227,30 @@ func (c *Client) ReadRegisterFast(addr uint16) (uint16, error) {
 	return uint16(results[0])<<8 | uint16(results[1]), nil
 }
 
+// WriteRegisterFast — одиночная запись без retry (для команд сброса/EEPROM).
+func (c *Client) WriteRegisterFast(addr, value uint16) error {
+	res := c.dispatch(kindWriteFast, addr, value, 1, nil)
+	return res.err
+}
+
+func (c *Client) doWriteRegisterFast(addr, value uint16) error {
+	_, err := c.client.WriteSingleRegister(addr, value)
+	return err
+}
+
 // WriteRegister записывает одиночный holding register (FC 06) с retry.
 func (c *Client) WriteRegister(addr, value uint16) error {
+	res := c.dispatch(kindWriteReg, addr, value, 1, nil)
+	return res.err
+}
+
+func (c *Client) doWriteRegister(addr, value uint16) error {
 	var lastErr error
 	for attempt := 0; attempt <= c.retry.MaxRetries; attempt++ {
 		if attempt > 0 {
 			time.Sleep(c.retry.Delay)
 		}
-		c.mu.Lock()
 		_, err := c.client.WriteSingleRegister(addr, value)
-		c.mu.Unlock()
 		if err == nil {
 			return nil
 		}
@@ -128,14 +264,17 @@ func (c *Client) WriteRegister(addr, value uint16) error {
 
 // ReadRegister читает одиночный holding register (FC 03) с retry.
 func (c *Client) ReadRegister(addr uint16) (uint16, error) {
+	res := c.dispatch(kindReadReg, addr, 0, 1, nil)
+	return res.val, res.err
+}
+
+func (c *Client) doReadRegister(addr uint16) (uint16, error) {
 	var lastErr error
 	for attempt := 0; attempt <= c.retry.MaxRetries; attempt++ {
 		if attempt > 0 {
 			time.Sleep(c.retry.Delay)
 		}
-		c.mu.Lock()
 		results, err := c.client.ReadHoldingRegisters(addr, 1)
-		c.mu.Unlock()
 		if err != nil {
 			if isModbusException(err) {
 				return 0, fmt.Errorf("modbus exception on read reg %d: %w", addr, err)
@@ -153,14 +292,17 @@ func (c *Client) ReadRegister(addr uint16) (uint16, error) {
 
 // ReadRegisters читает несколько holding registers подряд (FC 03) с retry.
 func (c *Client) ReadRegisters(addr, count uint16) ([]uint16, error) {
+	res := c.dispatch(kindReadRegs, addr, 0, count, nil)
+	return res.arr, res.err
+}
+
+func (c *Client) doReadRegisters(addr, count uint16) ([]uint16, error) {
 	var lastErr error
 	for attempt := 0; attempt <= c.retry.MaxRetries; attempt++ {
 		if attempt > 0 {
 			time.Sleep(c.retry.Delay)
 		}
-		c.mu.Lock()
 		results, err := c.client.ReadHoldingRegisters(addr, count)
-		c.mu.Unlock()
 		if err != nil {
 			if isModbusException(err) {
 				return nil, fmt.Errorf("modbus exception on read regs %d+%d: %w", addr, count, err)
@@ -181,20 +323,25 @@ func (c *Client) ReadRegisters(addr, count uint16) ([]uint16, error) {
 	return nil, fmt.Errorf("read regs %d+%d failed after %d retries: %w", addr, count, c.retry.MaxRetries+1, lastErr)
 }
 
-// Close закрывает соединение.
+// Close закрывает соединение и останавливает воркер.
 func (c *Client) Close() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.handler != nil {
-		return c.handler.Close()
-	}
-	return nil
+	var err error
+	c.closeOnce.Do(func() {
+		close(c.closeChan)
+		if c.handler != nil {
+			err = c.handler.Close()
+		}
+	})
+	return err
 }
 
 // Recover переподключает порт после транспортной ошибки.
 func (c *Client) Recover() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	res := c.dispatch(kindRecover, 0, 0, 0, nil)
+	return res.err
+}
+
+func (c *Client) doRecover() error {
 	if c.handler == nil {
 		return nil
 	}

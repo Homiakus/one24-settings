@@ -133,3 +133,16 @@ func BenchmarkStepParamsStructAllocations(b *testing.B) {
 		testutil.KeepInterface(sp)
 	}
 }
+
+// BenchmarkTaskPoolDispatch замеряет аллокации памяти при диспетчеризации через sync.Pool.
+func BenchmarkTaskPoolDispatch(b *testing.B) {
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		task := taskPool.Get().(*modbusTask)
+		task.kind = kindReadReg
+		task.addr = 1
+		taskPool.Put(task)
+	}
+}

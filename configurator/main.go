@@ -99,6 +99,7 @@ func run() error {
 		RateLimitRPS: cfg.Security.RateLimitPerSec,
 		APIKey:       cfg.Security.APIKey,
 		MaxWSClients: cfg.Security.MaxWSClients,
+		Zone:         uint16(cfg.Modbus.Zone),
 	}
 	srv, err := api.New(mbClient, hub, uiFS, srvCfg)
 	if err != nil {

@@ -69,6 +69,23 @@ type ProgramState struct {
 	ReagentLow  bool   `json:"reagent_low"` // флаг: реагент закончился, ждём пользователя
 }
 
+// ─── Sequence Builder ─────────────────────────────────────────────────────────
+
+// SequenceStep — один шаг в пользовательской последовательности команд.
+type SequenceStep struct {
+	Name       string `json:"name"`
+	Cmd        uint16 `json:"cmd"`
+	Zone       uint16 `json:"zone,omitempty"`        // 0=не менять, 1, 2, 3
+	DelaySec   int    `json:"delay_sec,omitempty"`   // задержка после выполнения команды
+	TimeoutSec int    `json:"timeout_sec,omitempty"` // таймаут (сек)
+}
+
+// CustomSequenceRequest — запрос на запуск последовательности команд.
+type CustomSequenceRequest struct {
+	Name  string         `json:"name"`
+	Steps []SequenceStep `json:"steps"`
+}
+
 // ─── Log ──────────────────────────────────────────────────────────────────────
 
 // LogEntry — запись в журнале операций.

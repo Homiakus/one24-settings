@@ -70,7 +70,7 @@ func (s *Server) handleSelectorCalibrate(w http.ResponseWriter, r *http.Request)
 		cmd = uint16(110) // calibrate_sel2
 	}
 
-	if err := s.modbus.SendCommand(r.Context(), cmd, 60*time.Second); err != nil {
+	if err := s.modbus.SendCommand(r.Context(), cmd, 300*time.Second); err != nil {
 		s.addLog("ERROR", "Калибровка селектора "+strconv.Itoa(req.Num)+": "+err.Error())
 		jsonError(w, http.StatusInternalServerError, err.Error())
 		return

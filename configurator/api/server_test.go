@@ -206,6 +206,39 @@ func TestCORSMiddlewareHeaders(t *testing.T) {
 	}
 }
 
+// TestCustomSequenceEndpointValidation проверяет валидацию пустой последовательности или неверного JSON.
+func TestCustomSequenceEndpointValidation(t *testing.T) {
+	srv := newTestServer("")
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	client := ts.Client()
+
+	// 1. Пустой список шагов -> 400 Bad Request
+	emptySeq := model.CustomSequenceRequest{Name: "Empty", Steps: []model.SequenceStep{}}
+	bodyBytes, _ := json.Marshal(emptySeq)
+	resp, err := client.Post(ts.URL+"/api/v1/programs/sequence/execute", "application/json", bytes.NewReader(bodyBytes))
+	testutil.AssertNil(t, err, "POST /api/v1/programs/sequence/execute (empty)")
+	if resp != nil {
+		_ = resp.Body.Close()
+		testutil.AssertEqual(t, resp.StatusCode, http.StatusBadRequest, "Пустая последовательность возвращает 400")
+	}
+
+	// 2. Без Modbus подключения -> 538 Service Unavailable (checkModbus)
+	seqWithStep := model.CustomSequenceRequest{
+		Name: "Test",
+		Steps: []model.SequenceStep{
+			{Name: "Step 1", Cmd: 120, Zone: 3, TimeoutSec: 300},
+		},
+	}
+	bodyBytes2, _ := json.Marshal(seqWithStep)
+	resp2, err := client.Post(ts.URL+"/api/v1/programs/sequence/execute", "application/json", bytes.NewReader(bodyBytes2))
+	testutil.AssertNil(t, err, "POST /api/v1/programs/sequence/execute (valid step)")
+	if resp2 != nil {
+		_ = resp2.Body.Close()
+		testutil.AssertEqual(t, resp2.StatusCode, http.StatusServiceUnavailable, "Без подключения возвращает 503")
+	}
+}
+
 // BenchmarkAPIStatusEndpoint замеряет производительность выполнения запроса GET /api/v1/status.
 func BenchmarkAPIStatusEndpoint(b *testing.B) {
 	srv := newTestServer("")

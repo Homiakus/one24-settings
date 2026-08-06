@@ -37,6 +37,7 @@ type ModbusConfig struct {
 	TimeoutMs    int    `toml:"timeout_ms"`
 	Retries      int    `toml:"retries"`
 	RetryDelayMs int    `toml:"retry_delay_ms"`
+	Zone         int    `toml:"zone"` // зона обработки: 1, 2, или 3 (обе)
 }
 
 // FeatureConfig — настройки функций.
@@ -79,6 +80,7 @@ func DefaultConfig() Config {
 			TimeoutMs:    500,
 			Retries:      3,
 			RetryDelayMs: 300,
+			Zone:         3,
 		},
 		Features: FeatureConfig{
 			AutoReconnect:          true,

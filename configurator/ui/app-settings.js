@@ -95,6 +95,8 @@
     return td;
   }
 
+  function showSkeleton(id, rows){const body=O.$(id);if(!body)return;body.replaceChildren();for(let i=0;i<rows;i++){const row=document.createElement('div');row.className='skeleton-row';for(let j=0;j<5;j++){const span=document.createElement('span');row.append(span);}body.append(row);}}
+
   function renderSteps() {
     const body = O.$('#steps-tbody');
     body.replaceChildren();
@@ -137,7 +139,18 @@
     step[key] = value;
     step.error = Number.isInteger(value) && value >= minVal && value <= max ? '' : `Допустимо ${minVal}–${max}`;
     step.dirty = step.exposure_time !== step.originalT || step.fill_volume !== step.originalV;
-    renderSteps();
+
+    input.classList.toggle('dirty', key === 'exposure_time' ? step.exposure_time !== step.originalT : step.fill_volume !== step.originalV);
+    const row = input.closest('tr');
+    if (row) {
+      row.classList.toggle('is-dirty', step.dirty);
+      row.classList.toggle('is-error', Boolean(step.error));
+      const status = row.querySelector('.row-state');
+      if (status) {
+        status.className = `row-state${step.dirty ? ' is-dirty' : step.error ? ' is-error' : ' is-ok'}`;
+        status.textContent = step.error || (step.dirty ? 'Изменено' : O.state.stepsFromDevice ? 'Прочитано' : 'По умолчанию');
+      }
+    }
     updateCounters();
   }
 
@@ -268,7 +281,17 @@
         item.coord = value;
         item.error = Number.isInteger(value) && value >= 0 && value <= 65535 ? '' : 'Допустимо 0–65535';
         item.dirty = value !== item.original;
-        renderValves();
+        input.classList.toggle('dirty', item.dirty);
+        const row = input.closest('tr');
+        if (row) {
+          row.classList.toggle('is-dirty', item.dirty);
+          row.classList.toggle('is-error', Boolean(item.error));
+          const status = row.querySelector('.row-state');
+          if (status) {
+            status.className = `row-state${item.dirty ? ' is-dirty' : item.error ? ' is-error' : ' is-ok'}`;
+            status.textContent = item.error || (item.dirty ? 'Изменено' : O.state.valvesFromDevice ? 'Прочитано' : 'По умолчанию');
+          }
+        }
         updateCounters();
       });
 
@@ -290,6 +313,9 @@
   };
 
   O.initSettings = async () => {
+    showSkeleton('#steps-tbody', 16);
+    showSkeleton('#valves1-tbody', 15);
+    showSkeleton('#valves2-tbody', 15);
     const [settings, valves] = await Promise.all([
       O.request('/settings/steps').catch(() => null),
       O.request('/settings/valves').catch(() => null)
@@ -302,6 +328,45 @@
     }
     O.state.valves1 = valves?.selector1 ? normalizeValves(valves.selector1, 1) : defaultValves(1);
     O.state.valves2 = valves?.selector2 ? normalizeValves(valves.selector2, 2) : defaultValves(2);
+
+    O.sendZone = async (zoneVal) => {
+      const zone = Number(zoneVal);
+      O.setBusy(true, 'Отправка зоны в контроллер');
+      try {
+        await O.request('/settings/zone', { method: 'PUT', body: { zone } });
+        O.syncZoneUI(zone);
+        O.toast(`Зона ${zone} успешно отправлена в контроллер.`, 'ok');
+      } catch (error) {
+        O.toast(`Ошибка отправки зоны: ${error.message}`, 'error');
+        try {
+          const current = await O.request('/settings/zone');
+          if (current?.zone) O.syncZoneUI(current.zone);
+        } catch (_) {}
+      } finally {
+        O.setBusy(false);
+      }
+    };
+
+    // Инициализация селектора зоны
+    try {
+      const zoneData = await O.request('/settings/zone').catch(() => ({ zone: 3 }));
+      O.syncZoneUI(zoneData.zone ?? 3);
+    } catch (_) { /* по умолчанию 3 */ }
+
+    const onZoneSelectChange = (event) => {
+      O.syncZoneUI(Number(event.target.value));
+    };
+
+    if (O.$('#zone-select')) O.$('#zone-select').onchange = onZoneSelectChange;
+    if (O.$('#zone-select-prog')) O.$('#zone-select-prog').onchange = onZoneSelectChange;
+
+    const onSendZoneClick = () => {
+      const val = O.$('#zone-select')?.value || O.$('#zone-select-prog')?.value || 3;
+      O.sendZone(val);
+    };
+
+    if (O.$('#btn-send-zone')) O.$('#btn-send-zone').onclick = onSendZoneClick;
+    if (O.$('#btn-send-zone-prog')) O.$('#btn-send-zone-prog').onclick = onSendZoneClick;
 
     renderSteps();
     renderValves();

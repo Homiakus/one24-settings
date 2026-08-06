@@ -14,7 +14,7 @@
   void import('./app-profile.js');
 
   O.text = (selector, value) => { const element = O.$(selector); if (element) element.textContent = value; };
-  O.request = async (path, { method = 'GET', body, timeout = 20000 } = {}) => {
+  O.request = async (path, { method = 'GET', body, timeout = 300000 } = {}) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
     try {
@@ -88,10 +88,22 @@
   function setDot(kind) {
     ['#device-dot', '#sb-dot'].forEach((selector) => { O.$(selector).className = `status-dot is-${kind}`; });
   }
+  O.syncZoneUI = (zone) => {
+    if (!zone) return;
+    O.state.zone = zone;
+    const zStr = String(zone);
+    ['#zone-select', '#zone-select-prog'].forEach((sel) => {
+      const el = O.$(sel);
+      if (el && el.value !== zStr) el.value = zStr;
+    });
+    O.text('#kpi-zone', zStr);
+  };
+
   O.renderConnection = (errorName = '') => {
     const port = O.$('#conn-port-inp').value.trim() || '—';
     O.text('#sb-status-text', O.state.connected ? 'Подключено' : 'Нет подключения');
     O.text('#sb-device-text', O.state.connected ? `${port} · slave ${O.$('#conn-slave-inp').value}` : 'Контроллер не выбран');
+    O.text('#kpi-zone', O.state.zone ? String(O.state.zone) : '3');
     O.text('#kpi-ready', O.state.ready ?? '—');
     O.text('#kpi-error', O.state.error === 0 ? 'Нет' : O.state.error ?? '—');
     O.text('#device-status-text', O.state.connected
@@ -119,6 +131,7 @@
       O.state.connected = Boolean(data.connected);
       O.state.ready = data.ready_status ?? null;
       O.state.error = data.status_error ?? null;
+      if (data.zone) O.syncZoneUI(data.zone);
       O.renderConnection(data.error_name || '');
     } catch (error) {
       O.state.connected = false; O.renderConnection(); O.text('#conn-error', error.message);
@@ -188,15 +201,46 @@
     const total = Number(data.total_steps || 0), current = Number(data.current_step || 0);
     if (total <= 0) return;
     const percent = Math.max(0, Math.min(100, Math.round(current / total * 100)));
-    const caption = `${data.step_name || data.op || 'Операция'} · ${current}/${total}`;
-    const titles = { read: 'Чтение настроек', write: 'Запись настроек', read_valves: 'Чтение клапанов', write_valves: 'Запись клапанов' };
-    O.$('#global-progress').hidden = false; O.text('#gp-title', titles[data.op] || 'Операция выполняется'); O.text('#gp-text', caption);
-    O.$('#gp-fill').style.width = `${percent}%`; O.$('#gp-track').setAttribute('aria-valuenow', String(percent));
-    O.$('#progress-wrap').hidden = false; O.$('#progress-fill').style.width = `${percent}%`; O.text('#progress-text', caption);
+    const percentStr = `${percent}%`;
+    const chipStr = `Шаг ${current}/${total}`;
+    const caption = data.step_name || data.op || 'Операция';
+    const titles = {
+      read: 'Чтение настроек', write: 'Запись настроек в EEPROM',
+      read_valves: 'Чтение координат клапанов', write_valves: 'Запись координат клапанов',
+      system_check: 'Проверка системы', stain: 'Окраска Папаниколау', wash: 'Промывка системы'
+    };
+
+    const gProgress = O.$('#global-progress');
+    if (gProgress) {
+      gProgress.hidden = false;
+      O.text('#gp-title', titles[data.op] || 'Операция выполняется');
+      O.text('#gp-text', caption);
+      O.text('#gp-chip', chipStr);
+      O.text('#gp-percent', percentStr);
+      const gpFill = O.$('#gp-fill');
+      if (gpFill) gpFill.style.width = `${percent}%`;
+    }
+
+    const pWrap = O.$('#progress-wrap');
+    if (pWrap) {
+      pWrap.hidden = false;
+      O.text('#prog-card-title', titles[data.op] || 'Выполнение цикла');
+      O.text('#progress-text', caption);
+      O.text('#prog-chip', chipStr);
+      O.text('#prog-percent', percentStr);
+      const pFill = O.$('#progress-fill');
+      if (pFill) pFill.style.width = `${percent}%`;
+    }
   };
   O.hideProgress = () => {
-    O.$('#global-progress').hidden = true; O.$('#progress-wrap').hidden = true;
-    O.$('#gp-fill').style.width = '0%'; O.$('#progress-fill').style.width = '0%';
+    ['#global-progress', '#progress-wrap'].forEach((sel) => {
+      const el = O.$(sel);
+      if (el) el.hidden = true;
+    });
+    ['#gp-fill', '#progress-fill'].forEach((sel) => {
+      const el = O.$(sel);
+      if (el) el.style.width = '0%';
+    });
   };
   function connectWebSocket() {
     if (ws && [WebSocket.OPEN, WebSocket.CONNECTING].includes(ws.readyState)) return;

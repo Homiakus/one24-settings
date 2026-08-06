@@ -17,6 +17,7 @@ func (c *Client) WaitReady(timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	lastReady := uint16(0xFFFF)
 	transportErrors := 0
+	consecutiveTransportErrors := 0
 	attempts := 0
 
 	for time.Now().Before(deadline) {
@@ -24,9 +25,14 @@ func (c *Client) WaitReady(timeout time.Duration) error {
 		ready, err := c.ReadRegisterFast(RegReadyStatus)
 		if err != nil {
 			transportErrors++
+			consecutiveTransportErrors++
+			if consecutiveTransportErrors >= 5 {
+				return fmt.Errorf("потеря связи с контроллером (%d подряд ошибок чтения)", consecutiveTransportErrors)
+			}
 			time.Sleep(200 * time.Millisecond)
 			continue
 		}
+		consecutiveTransportErrors = 0
 		lastReady = ready
 		if ready == 0 {
 			return nil
@@ -220,67 +226,78 @@ func (c *Client) ReadAllSettings(progress ProgressFunc) ([]model.StepParams, mod
 
 // WriteAllSettings записывает ВСЕ 11 шагов + delta на контроллер в оптимизированном атомарном батч-режиме.
 func (c *Client) WriteAllSettings(steps []model.StepParams, delta int, progress ProgressFunc) (int, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	for _, step := range steps {
 		if err := validateStepParams(step.ID, step.ExposureTime, step.FillVolume); err != nil {
 			return 0, fmt.Errorf("предпроверка шага %d: %w", step.ID, err)
 		}
 	}
 
-	transport := lockedSelectorScanTransport{client: c}
-	if err := transport.waitReady(10 * time.Second); err != nil {
-		return 0, fmt.Errorf("контроллер не готов к записи настроек: %w", err)
-	}
-
-	written := 0
-	total := len(steps)
-	if delta >= 0 && delta <= 255 {
-		total++
-	}
-
-	for _, step := range steps {
-		written++
-		if progress != nil {
-			progress(written, total, fmt.Sprintf("Запись шага %d/11", step.ID))
+	res, err := c.Exec(func() (any, error) {
+		transport := lockedSelectorScanTransport{client: c}
+		if err := transport.waitReady(10 * time.Second); err != nil {
+			return 0, fmt.Errorf("контроллер не готов к записи настроек: %w", err)
 		}
 
-		bytesPayload := []byte{
-			byte(step.ID >> 8), byte(step.ID),
-			byte(step.ExposureTime >> 8), byte(step.ExposureTime),
-			byte(step.FillVolume >> 8), byte(step.FillVolume),
+		written := 0
+		total := len(steps)
+		if delta >= 0 && delta <= 255 {
+			total++
 		}
-		_, err := c.client.WriteMultipleRegisters(RegCurrentStep, 3, bytesPayload)
-		if err != nil {
-			if err := transport.writeRegister(RegCurrentStep, uint16(step.ID)); err != nil {
-				return written - 1, fmt.Errorf("шаг %d (current_step): %w", step.ID, err)
+
+		for _, step := range steps {
+			if progress != nil {
+				progress(written+1, total, fmt.Sprintf("Запись шага %d/11", step.ID))
 			}
-			if err := transport.writeRegister(RegExposureTime, uint16(step.ExposureTime)); err != nil {
-				return written - 1, fmt.Errorf("шаг %d (exposure_time): %w", step.ID, err)
+
+			payload := [6]byte{
+				byte(step.ID >> 8), byte(step.ID),
+				byte(step.ExposureTime >> 8), byte(step.ExposureTime),
+				byte(step.FillVolume >> 8), byte(step.FillVolume),
 			}
-			if err := transport.writeRegister(RegLiquidFillVolume, uint16(step.FillVolume)); err != nil {
-				return written - 1, fmt.Errorf("шаг %d (fill_volume): %w", step.ID, err)
+			_, err := c.client.WriteMultipleRegisters(RegCurrentStep, 3, payload[:])
+			if err != nil {
+				if err := transport.writeRegister(RegCurrentStep, uint16(step.ID)); err != nil {
+					return written, fmt.Errorf("шаг %d (current_step): %w", step.ID, err)
+				}
+				if err := transport.writeRegister(RegExposureTime, uint16(step.ExposureTime)); err != nil {
+					return written, fmt.Errorf("шаг %d (exposure_time): %w", step.ID, err)
+				}
+				if err := transport.writeRegister(RegLiquidFillVolume, uint16(step.FillVolume)); err != nil {
+					return written, fmt.Errorf("шаг %d (fill_volume): %w", step.ID, err)
+				}
 			}
+			written++
 		}
-	}
 
-	if delta >= 0 && delta <= 255 {
-		written++
-		if progress != nil {
-			progress(written, total, "Запись delta")
+		if delta >= 0 && delta <= 255 {
+			if progress != nil {
+				progress(written+1, total, "Запись delta")
+			}
+			if err := transport.writeRegister(RegReagentEmptyDelta, uint16(delta)); err != nil {
+				return written, fmt.Errorf("запись delta (рег. 41): %w", err)
+			}
+			written++
 		}
-		if err := transport.writeRegister(RegReagentEmptyDelta, uint16(delta)); err != nil {
-			return written - 1, fmt.Errorf("запись delta (рег. 41): %w", err)
+
+		if _, err := transport.client.client.WriteSingleRegister(RegReadyStatus, CmdSaveEEPROM); err != nil {
+			return written, fmt.Errorf("сохранение в EEPROM (рег 1 = 222): %w", err)
 		}
-	}
 
-	// Отправка команды 222 в рег. 1 для сохранения всех настроек в EEPROM
-	if err := transport.writeRegister(RegReadyStatus, CmdSaveEEPROM); err != nil {
-		return written, fmt.Errorf("сохранение в EEPROM (рег 1 = 222): %w", err)
-	}
+		return written, nil
+	})
 
-	return written, nil
+	if err != nil {
+		return 0, err
+	}
+	return res.(int), nil
+}
+
+// WriteZone записывает выбор зоны в регистр 46 (1=первая, 2=вторая, 3=обе).
+func (c *Client) WriteZone(zone uint16) error {
+	if zone < 1 || zone > 3 {
+		return fmt.Errorf("недопустимая зона %d (допустимы 1, 2, 3)", zone)
+	}
+	return c.WriteRegister(RegZoneSelect, zone)
 }
 
 // SendCommand отправляет команду в рег. 9, ждёт завершения, проверяет ошибки.
@@ -294,7 +311,20 @@ func (c *Client) SendCommand(ctx context.Context, cmd uint16, timeout time.Durat
 		return fmt.Errorf("отправка команды %d: %w", cmd, err)
 	}
 
-	// Ждать ready_status == 0
+	// Пауза 300мс, чтобы микроконтроллер успел взвести ready_status != 0 (занят)
+	time.Sleep(300 * time.Millisecond)
+
+	// Ожидание подтверждения старта: плата переходит в статус "занята"
+	startWaitDeadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(startWaitDeadline) {
+		ready, err := c.ReadRegisterFast(RegReadyStatus)
+		if err == nil && ready != 0 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// Ждать ready_status == 0 (окончание выполнения операции)
 	deadline := time.Now().Add(timeout)
 	completed := false
 	for time.Now().Before(deadline) {
@@ -509,10 +539,11 @@ func (c *Client) WriteSelectorPositionParams(p model.SelectorPosition) error {
 		return fmt.Errorf("запись координаты %d (рег 21): %w", p.Coord, err)
 	}
 
-	// 4. Отправка команды 222 в рег. 1 для сохранения в EEPROM
-	if err := c.WriteRegister(RegReadyStatus, CmdSaveEEPROM); err != nil {
+	// 4. Отправка команды 222 в рег. 1 для сохранения в EEPROM (без retry)
+	if err := c.WriteRegisterFast(RegReadyStatus, CmdSaveEEPROM); err != nil {
 		return fmt.Errorf("сохранение в EEPROM (рег 1 = 222): %w", err)
 	}
+	time.Sleep(200 * time.Millisecond)
 
 	return nil
 }

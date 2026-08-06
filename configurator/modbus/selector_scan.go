@@ -116,11 +116,26 @@ func (t lockedSelectorScanTransport) readRegister(addr uint16) (uint16, error) {
 // ready + selector target + hole + coordinate = около 120 запросов.
 // Новый алгоритм выполняет ready один раз, target два раза и по два запроса
 // на позицию: 63 запроса. Параллельное вмешательство исключено mutex-ом.
-func (c *Client) readAllValvePositionsFast(progress ProgressFunc) ([]model.SelectorPosition, []model.SelectorPosition, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+type valveScanResult struct {
+	sel1 []model.SelectorPosition
+	sel2 []model.SelectorPosition
+}
 
-	return scanSelectorPositions(lockedSelectorScanTransport{client: c}, progress)
+func (c *Client) readAllValvePositionsFast(progress ProgressFunc) ([]model.SelectorPosition, []model.SelectorPosition, error) {
+	res, err := c.Exec(func() (any, error) {
+		sel1, sel2, err := scanSelectorPositions(lockedSelectorScanTransport{client: c}, progress)
+		if err != nil {
+			return nil, err
+		}
+		return valveScanResult{sel1: sel1, sel2: sel2}, nil
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	if v, ok := res.(valveScanResult); ok {
+		return v.sel1, v.sel2, nil
+	}
+	return nil, nil, nil
 }
 
 func scanSelectorPositions(transport selectorScanTransport, progress ProgressFunc) ([]model.SelectorPosition, []model.SelectorPosition, error) {
@@ -137,8 +152,6 @@ func scanSelectorPositions(transport selectorScanTransport, progress ProgressFun
 	current := 0
 
 	for selectorNum := 1; selectorNum <= 2; selectorNum++ {
-		// Выбор селектора не меняется внутри его 15 отверстий, поэтому записываем
-		// регистр 19 один раз вместо пятнадцати одинаковых записей.
 		if err := transport.writeRegister(RegSelectorTarget, uint16(selectorNum)); err != nil {
 			return nil, nil, fmt.Errorf("выбор селектора %d (рег 19): %w", selectorNum, err)
 		}
@@ -174,76 +187,77 @@ func scanSelectorPositions(transport selectorScanTransport, progress ProgressFun
 	return selectors[0], selectors[1], nil
 }
 
-// writeAllValvePositionsFast записывает изменённые положения селекторов в атомарном батч-режиме под единым mutex.
-// Позволяет сократить время записи 30 положений с ~60 секунд до ~1-2 секунд.
 func (c *Client) writeAllValvePositionsFast(sel1, sel2 []model.SelectorPosition, progress ProgressFunc) (int, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	res, err := c.Exec(func() (any, error) {
+		transport := lockedSelectorScanTransport{client: c}
 
-	transport := lockedSelectorScanTransport{client: c}
-
-	for _, p := range sel1 {
-		if err := validateSelectorPosition(p.Selector, p.Hole, p.Coord); err != nil {
-			return 0, fmt.Errorf("предпроверка клапан 1 отв %d: %w", p.Hole, err)
-		}
-	}
-	for _, p := range sel2 {
-		if err := validateSelectorPosition(p.Selector, p.Hole, p.Coord); err != nil {
-			return 0, fmt.Errorf("предпроверка клапан 2 отв %d: %w", p.Hole, err)
-		}
-	}
-
-	total := len(sel1) + len(sel2)
-	if total == 0 {
-		return 0, nil
-	}
-
-	if err := transport.waitReady(10 * time.Second); err != nil {
-		return 0, fmt.Errorf("контроллер не готов к записи координат: %w", err)
-	}
-
-	written := 0
-
-	if len(sel1) > 0 {
-		if err := transport.writeRegister(RegSelectorTarget, 1); err != nil {
-			return 0, fmt.Errorf("выбор селектора 1 (рег 19): %w", err)
-		}
 		for _, p := range sel1 {
-			if err := transport.writeHoleAndCoord(p.Hole, p.Coord); err != nil {
-				return written, fmt.Errorf("клапан 1 отв %d: %w", p.Hole, err)
+			if err := validateSelectorPosition(p.Selector, p.Hole, p.Coord); err != nil {
+				return 0, fmt.Errorf("предпроверка клапан 1 отв %d: %w", p.Hole, err)
 			}
-			written++
-			if progress != nil {
-				progress(written, total, fmt.Sprintf("Запись Клапан 1, отв. %d/14", p.Hole))
-			}
-		}
-	}
-
-	if len(sel2) > 0 {
-		if err := transport.writeRegister(RegSelectorTarget, 2); err != nil {
-			return written, fmt.Errorf("выбор селектора 2 (рег 19): %w", err)
 		}
 		for _, p := range sel2 {
-			if err := transport.writeHoleAndCoord(p.Hole, p.Coord); err != nil {
-				return written, fmt.Errorf("клапан 2 отв %d: %w", p.Hole, err)
-			}
-			written++
-			if progress != nil {
-				progress(written, total, fmt.Sprintf("Запись Клапан 2, отв. %d/14", p.Hole))
+			if err := validateSelectorPosition(p.Selector, p.Hole, p.Coord); err != nil {
+				return 0, fmt.Errorf("предпроверка клапан 2 отв %d: %w", p.Hole, err)
 			}
 		}
-	}
 
-	// Отправка команды 222 в рег. 1 для сохранения всех настроек клапанов в EEPROM
-	if err := transport.writeRegister(RegReadyStatus, CmdSaveEEPROM); err != nil {
-		return written, fmt.Errorf("сохранение клапанов в EEPROM (рег 1 = 222): %w", err)
-	}
+		total := len(sel1) + len(sel2)
+		if total == 0 {
+			return 0, nil
+		}
 
-	return written, nil
+		if err := transport.waitReady(10 * time.Second); err != nil {
+			return 0, fmt.Errorf("контроллер не готов к записи координат: %w", err)
+		}
+
+		written := 0
+
+		if len(sel1) > 0 {
+			if err := transport.writeRegister(RegSelectorTarget, 1); err != nil {
+				return 0, fmt.Errorf("выбор селектора 1 (рег 19): %w", err)
+			}
+			for _, p := range sel1 {
+				if err := transport.writeHoleAndCoord(p.Hole, p.Coord); err != nil {
+					return written, fmt.Errorf("клапан 1 отв %d: %w", p.Hole, err)
+				}
+				written++
+				if progress != nil {
+					progress(written, total, fmt.Sprintf("Запись Клапан 1, отв. %d/14", p.Hole))
+				}
+			}
+		}
+
+		if len(sel2) > 0 {
+			if err := transport.writeRegister(RegSelectorTarget, 2); err != nil {
+				return written, fmt.Errorf("выбор селектора 2 (рег 19): %w", err)
+			}
+			for _, p := range sel2 {
+				if err := transport.writeHoleAndCoord(p.Hole, p.Coord); err != nil {
+					return written, fmt.Errorf("клапан 2 отв %d: %w", p.Hole, err)
+				}
+				written++
+				if progress != nil {
+					progress(written, total, fmt.Sprintf("Запись Клапан 2, отв. %d/14", p.Hole))
+				}
+			}
+		}
+
+		if _, err := transport.client.client.WriteSingleRegister(RegReadyStatus, CmdSaveEEPROM); err != nil {
+			return written, fmt.Errorf("сохранение клапанов в EEPROM (рег 1 = 222): %w", err)
+		}
+
+		return written, nil
+	})
+
+	if err != nil {
+		return 0, err
+	}
+	return res.(int), nil
 }
 
 func (t lockedSelectorScanTransport) writeHoleAndCoord(hole, coord int) error {
-	bytesPayload := []byte{
+	payload := [4]byte{
 		byte(hole >> 8), byte(hole),
 		byte(coord >> 8), byte(coord),
 	}
@@ -252,7 +266,7 @@ func (t lockedSelectorScanTransport) writeHoleAndCoord(hole, coord int) error {
 		if attempt > 0 {
 			time.Sleep(t.client.retry.Delay)
 		}
-		_, err := t.client.client.WriteMultipleRegisters(RegSelectorHole, 2, bytesPayload)
+		_, err := t.client.client.WriteMultipleRegisters(RegSelectorHole, 2, payload[:])
 		if err == nil {
 			return nil
 		}

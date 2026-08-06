@@ -22,12 +22,17 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	connection := s.state.Connection
 	s.unlockState()
 
+	s.lockState()
+	zone := s.state.Zone
+	s.unlockState()
+
 	data := map[string]any{
 		"connected":    connected,
 		"port":         connection.Port,
 		"baudrate":     connection.Baudrate,
 		"slave_id":     connection.SlaveID,
 		"errors_count": connection.ErrorsCount,
+		"zone":         zone,
 	}
 
 	if connected {
@@ -463,6 +468,41 @@ func clearSelectorDirty(all, written []model.SelectorPosition) {
 			all[i].Dirty = false
 		}
 	}
+}
+
+// ─── Zone ──────────────────────────────────────────────────────────────────────
+
+func (s *Server) handleGetZone(w http.ResponseWriter, r *http.Request) {
+	s.state.mu.RLock()
+	zone := s.state.Zone
+	s.state.mu.RUnlock()
+	jsonOK(w, map[string]any{"zone": zone})
+}
+
+func (s *Server) handlePutZone(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Zone uint16 `json:"zone"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || (req.Zone != 1 && req.Zone != 2 && req.Zone != 3) {
+		jsonError(w, http.StatusBadRequest, "zone должен быть 1, 2 или 3")
+		return
+	}
+
+	s.state.mu.Lock()
+	s.state.Zone = req.Zone
+	s.state.mu.Unlock()
+
+	// Если подключены к контроллеру — сразу записать зону в регистр 46
+	if s.modbus != nil && s.modbus.Connected() {
+		if err := s.modbus.WriteZone(req.Zone); err != nil {
+			s.addLog("ERROR", "Не удалось записать зону: "+err.Error())
+			jsonError(w, http.StatusInternalServerError, "Не удалось записать зону: "+err.Error())
+			return
+		}
+	}
+
+	s.addLog("INFO", "Выбрана зона: "+strconv.Itoa(int(req.Zone)))
+	jsonOK(w, map[string]any{"zone": req.Zone})
 }
 
 func modbusName(code uint16) string {

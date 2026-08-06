@@ -28,6 +28,7 @@ type ServerConfig struct {
 	RateLimitRPS int
 	APIKey       string
 	MaxWSClients int
+	Zone         uint16 // зона по умолчанию (1, 2, или 3)
 }
 
 // ServerState — разделяемое состояние с защитой мьютексом.
@@ -40,6 +41,7 @@ type ServerState struct {
 	Connection         model.ConnectionState
 	Program            model.ProgramState
 	Log                []model.LogEntry
+	Zone               uint16    `json:"zone"` // выбранная зона: 1, 2, или 3 (обе)
 	startTime          time.Time
 	reagentResume      chan bool // сигнал: true=продолжить, false=отменить
 }
@@ -57,6 +59,7 @@ func New(mb *modbus.Client, h *ws.Hub, uiFS embed.FS, cfg *ServerConfig) (*Serve
 			SelectorPositions2: makeDefaultSelectorPositions(2),
 			Connection:         model.ConnectionState{Port: "COM4", Baudrate: 115200, SlaveID: 1},
 			Log:                make([]model.LogEntry, 0),
+			Zone:               zoneDefault(cfg),
 			startTime:          time.Now(),
 		},
 	}
@@ -88,6 +91,8 @@ func (s *Server) routes(uiFS embed.FS) {
 	s.mux.HandleFunc("POST /api/v1/settings/write-all", s.handleWriteAll)
 	s.mux.HandleFunc("GET /api/v1/settings/detection", s.handleGetDetection)
 	s.mux.HandleFunc("PUT /api/v1/settings/detection", s.handlePutDetection)
+	s.mux.HandleFunc("GET /api/v1/settings/zone", s.handleGetZone)
+	s.mux.HandleFunc("PUT /api/v1/settings/zone", s.handlePutZone)
 
 	s.mux.HandleFunc("GET /api/v1/settings/valves", s.handleGetValves)
 	s.mux.HandleFunc("PUT /api/v1/settings/valves/{selector}/{hole}", s.handlePutValve)
@@ -107,6 +112,7 @@ func (s *Server) routes(uiFS embed.FS) {
 	s.mux.HandleFunc("POST /api/v1/programs/reset-plc", s.handleResetPLC)
 	s.mux.HandleFunc("POST /api/v1/programs/stain/reagent-replaced", s.handleReagentReplaced)
 	s.mux.HandleFunc("POST /api/v1/programs/stain/reagent-cancel", s.handleReagentCancel)
+	s.mux.HandleFunc("POST /api/v1/programs/sequence/execute", s.handleCustomSequence)
 
 	s.mux.HandleFunc("GET /api/v1/testing/sensors", s.handleSensors)
 	s.mux.HandleFunc("POST /api/v1/testing/selector", s.handleSelector)
@@ -254,6 +260,13 @@ func boolStr(b bool) string {
 		return "true"
 	}
 	return "false"
+}
+
+func zoneDefault(cfg *ServerConfig) uint16 {
+	if cfg != nil && cfg.Zone >= 1 && cfg.Zone <= 3 {
+		return cfg.Zone
+	}
+	return 3
 }
 
 func isProgramEndpoint(path string) bool {

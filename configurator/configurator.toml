@@ -18,6 +18,7 @@ slave_id = 1
 timeout_ms = 500
 retries = 3
 retry_delay_ms = 300
+zone = 3                       # зона обработки: 1=первая, 2=вторая, 3=обе
 
 [features]
 auto_reconnect = true

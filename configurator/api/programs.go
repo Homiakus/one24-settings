@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 	"strings"
@@ -63,6 +64,25 @@ func isProgramRunning() bool {
 	return activeProgram != nil
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+// checkPLCReady проверяет готовность PLC (ready_status == 0) и пишет ошибку в w при неудаче.
+func (s *Server) checkPLCReady(w http.ResponseWriter) bool {
+	s.modbusMu.RLock()
+	mb := s.modbus
+	s.modbusMu.RUnlock()
+	ready, err := mb.ReadRegister(1)
+	if err != nil {
+		jsonError(w, http.StatusServiceUnavailable, "PLC не отвечает: "+err.Error())
+		return false
+	}
+	if ready != 0 {
+		jsonError(w, http.StatusConflict, "PLC занят (ready_status="+itoa(int(ready))+"). Дождитесь завершения операции или выполните сброс.")
+		return false
+	}
+	return true
+}
+
 // ─── System Check ─────────────────────────────────────────────────────────────
 
 func (s *Server) handleSystemCheck(w http.ResponseWriter, r *http.Request) {
@@ -70,14 +90,12 @@ func (s *Server) handleSystemCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Проверить, что PLC не занят перед запуском
-	ready, err := s.modbus.ReadRegister(1)
-	if err != nil {
-		jsonError(w, http.StatusServiceUnavailable, "PLC не отвечает: "+err.Error())
+	if err := s.writeZoneToPLC(); err != nil {
+		jsonError(w, http.StatusInternalServerError, "Не удалось выбрать зону: "+err.Error())
 		return
 	}
-	if ready != 0 {
-		jsonError(w, http.StatusConflict, "PLC занят (ready_status="+itoa(int(ready))+"). Дождитесь завершения операции или выполните сброс.")
+
+	if !s.checkPLCReady(w) {
 		return
 	}
 
@@ -112,22 +130,27 @@ func (s *Server) runSystemCheck(ctx context.Context) {
 	for i, step := range steps {
 		select {
 		case <-ctx.Done():
-			s.drainOnAbort()
+			if step.cmd != modbus.CmdDrainIntermediate {
+				s.drainOnAbort()
+			}
 			return
 		default:
 		}
 		s.progressStep(i+1, step.name)
 		s.addLog("INFO", "Проверка: "+step.name)
 
-		if err := s.modbus.SendCommand(ctx, step.cmd, 120*time.Second); err != nil {
+		if err := s.modbus.SendCommand(ctx, step.cmd, 300*time.Second); err != nil {
 			s.addLog("ERROR", "Ошибка проверки: "+step.name+": "+err.Error())
 			s.hub.Broadcast(model.WSEvent{
 				Type: "error",
 				Data: map[string]string{"code": "EXEC", "message": err.Error(), "context": step.name},
 			})
-			s.drainOnAbort()
+			if step.cmd != modbus.CmdDrainIntermediate {
+				s.drainOnAbort()
+			}
 			return
 		}
+		time.Sleep(500 * time.Millisecond)
 	}
 	s.addLog("INFO", "Проверка системы: OK")
 }
@@ -138,6 +161,16 @@ func (s *Server) handleLoad(w http.ResponseWriter, r *http.Request) {
 	if !s.checkModbus(w) {
 		return
 	}
+
+	if err := s.writeZoneToPLC(); err != nil {
+		jsonError(w, http.StatusInternalServerError, "Не удалось выбрать зону: "+err.Error())
+		return
+	}
+
+	if !s.checkPLCReady(w) {
+		return
+	}
+
 	ctx, cancel, gen, ok := startProgram()
 	if !ok {
 		jsonError(w, http.StatusConflict, "Программа уже выполняется")
@@ -156,6 +189,16 @@ func (s *Server) handleSedimentation(w http.ResponseWriter, r *http.Request) {
 	if !s.checkModbus(w) {
 		return
 	}
+
+	if err := s.writeZoneToPLC(); err != nil {
+		jsonError(w, http.StatusInternalServerError, "Не удалось выбрать зону: "+err.Error())
+		return
+	}
+
+	if !s.checkPLCReady(w) {
+		return
+	}
+
 	ctx, cancel, gen, ok := startProgram()
 	if !ok {
 		jsonError(w, http.StatusConflict, "Программа уже выполняется")
@@ -176,6 +219,16 @@ func (s *Server) handleStainStart(w http.ResponseWriter, r *http.Request) {
 	if !s.checkModbus(w) {
 		return
 	}
+
+	if err := s.writeZoneToPLC(); err != nil {
+		jsonError(w, http.StatusInternalServerError, "Не удалось выбрать зону: "+err.Error())
+		return
+	}
+
+	if !s.checkPLCReady(w) {
+		return
+	}
+
 	ctx, cancel, gen, ok := startProgram()
 	if !ok {
 		jsonError(w, http.StatusConflict, "Программа уже выполняется")
@@ -319,6 +372,16 @@ func (s *Server) handleWashStart(w http.ResponseWriter, r *http.Request) {
 	if !s.checkModbus(w) {
 		return
 	}
+
+	if err := s.writeZoneToPLC(); err != nil {
+		jsonError(w, http.StatusInternalServerError, "Не удалось выбрать зону: "+err.Error())
+		return
+	}
+
+	if !s.checkPLCReady(w) {
+		return
+	}
+
 	ctx, cancel, gen, ok := startProgram()
 	if !ok {
 		jsonError(w, http.StatusConflict, "Программа уже выполняется")
@@ -398,6 +461,16 @@ func (s *Server) handleFullStart(w http.ResponseWriter, r *http.Request) {
 	if !s.checkModbus(w) {
 		return
 	}
+
+	if err := s.writeZoneToPLC(); err != nil {
+		jsonError(w, http.StatusInternalServerError, "Не удалось выбрать зону: "+err.Error())
+		return
+	}
+
+	if !s.checkPLCReady(w) {
+		return
+	}
+
 	ctx, cancel, gen, ok := startProgram()
 	if !ok {
 		jsonError(w, http.StatusConflict, "Программа уже выполняется")
@@ -492,10 +565,9 @@ func (s *Server) handleResetPLC(w http.ResponseWriter, r *http.Request) {
 
 	s.addLog("WARN", "Сброс PLC (запись 111 в регистр 1)")
 
-	if err := mb.WriteRegister(1, 111); err != nil {
-		s.addLog("ERROR", "Сброс PLC: "+err.Error())
-		jsonError(w, http.StatusInternalServerError, "Сброс PLC не удался: "+err.Error())
-		return
+	if err := mb.WriteRegisterFast(1, 111); err != nil {
+		// При сбросе контроллер может не успеть ответить — это нормально
+		s.addLog("WARN", "Сброс PLC: контроллер не ответил (ожидаемо при перезагрузке)")
 	}
 
 	// Шаг 1: подождать, пока плата уйдёт в перезагрузку
@@ -509,6 +581,9 @@ func (s *Server) handleResetPLC(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
+
+	// Очистить буфер COM-порта от возможных помех линии при перезагрузке MCU
+	_ = mb.Recover()
 
 	// Шаг 2: ждать, пока плата вернётся и reg 1 == 0 — до 30 сек
 	s.addLog("INFO", "Ждём завершения перезагрузки (ready_status == 0)...")
@@ -553,10 +628,9 @@ func (s *Server) handleEmergencyStop(w http.ResponseWriter, r *http.Request) {
 	s.modbusMu.RLock()
 	mb := s.modbus
 	s.modbusMu.RUnlock()
-	if err := mb.WriteRegister(1, 111); err != nil {
-		s.addLog("ERROR", "Аварийный стоп: "+err.Error())
-		jsonError(w, http.StatusInternalServerError, "Аварийный стоп: "+err.Error())
-		return
+	if err := mb.WriteRegisterFast(1, 111); err != nil {
+		// При аварийном стопе контроллер может уйти в перезагрузку — ошибка ожидаема
+		s.addLog("WARN", "Аварийный стоп: контроллер не ответил (ожидаемо)")
 	}
 
 	s.addLog("WARN", "АВАРИЙНЫЙ СТОП")
@@ -573,7 +647,11 @@ func (s *Server) runSimpleCmd(ctx context.Context, cmd uint16, program, label st
 	s.setProgram(program, 1, 1, label, "running")
 	defer s.clearProgram()
 	s.addLog("INFO", label)
-	if err := s.modbus.SendCommand(ctx, cmd, 120*time.Second); err != nil {
+	timeout := 300 * time.Second
+	if cmd == modbus.CmdSedimentation {
+		timeout = 600 * time.Second
+	}
+	if err := s.modbus.SendCommand(ctx, cmd, timeout); err != nil {
 		s.addLog("ERROR", label+": "+err.Error())
 		s.hub.Broadcast(model.WSEvent{
 			Type: "error",
@@ -589,7 +667,11 @@ func (s *Server) runSimpleCmdSync(ctx context.Context, cmd uint16, label string)
 		return
 	}
 	s.addLog("INFO", label)
-	if err := s.modbus.SendCommand(ctx, cmd, 120*time.Second); err != nil {
+	timeout := 300 * time.Second
+	if cmd == modbus.CmdSedimentation {
+		timeout = 600 * time.Second
+	}
+	if err := s.modbus.SendCommand(ctx, cmd, timeout); err != nil {
 		s.addLog("ERROR", label+": "+err.Error())
 	}
 }
@@ -636,6 +718,20 @@ func (s *Server) emitProgress() {
 	s.hub.Broadcast(model.WSEvent{Type: "progress", Data: prog})
 }
 
+// writeZoneToPLC записывает выбранную зону в регистр 46 перед запуском операции.
+func (s *Server) writeZoneToPLC() error {
+	s.state.mu.RLock()
+	zone := s.state.Zone
+	s.state.mu.RUnlock()
+	s.modbusMu.RLock()
+	mb := s.modbus
+	s.modbusMu.RUnlock()
+	if mb == nil {
+		return nil // нет подключения — зона будет записана при connect
+	}
+	return mb.WriteZone(zone)
+}
+
 func (s *Server) drainOnAbort() {
 	s.modbusMu.RLock()
 	mb := s.modbus
@@ -644,13 +740,111 @@ func (s *Server) drainOnAbort() {
 		return
 	}
 	s.addLog("WARN", "Аварийный слив...")
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
 	defer cancel()
-	if err := mb.SendCommand(ctx, modbus.CmdDrainIntermediate, 60*time.Second); err != nil {
+	if err := mb.SendCommand(ctx, modbus.CmdDrainIntermediate, 300*time.Second); err != nil {
 		s.addLog("ERROR", "Аварийный слив не удался: "+err.Error())
-	} else {
-		s.addLog("INFO", "Аварийный слив: OK")
 	}
+}
+
+// ─── Custom Sequence ──────────────────────────────────────────────────────────
+
+func (s *Server) handleCustomSequence(w http.ResponseWriter, r *http.Request) {
+	var req model.CustomSequenceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "Некорректный JSON последовательности: "+err.Error())
+		return
+	}
+	if len(req.Steps) == 0 {
+		jsonError(w, http.StatusBadRequest, "Последовательность команд не может быть пустой")
+		return
+	}
+
+	if !s.checkModbus(w) {
+		return
+	}
+
+	if !s.checkPLCReady(w) {
+		return
+	}
+
+	ctx, cancel, gen, ok := startProgram()
+	if !ok {
+		jsonError(w, http.StatusConflict, "Программа уже выполняется")
+		return
+	}
+
+	go func() {
+		defer cancel()
+		defer finishProgram(gen)
+		defer recoverPanic("custom-sequence")
+		s.runCustomSequence(ctx, req)
+	}()
+
+	jsonOK(w, map[string]string{"status": "started", "program": "custom_sequence"})
+}
+
+func (s *Server) runCustomSequence(ctx context.Context, req model.CustomSequenceRequest) {
+	total := len(req.Steps)
+	seqName := req.Name
+	if seqName == "" {
+		seqName = "Пользовательский сценарий"
+	}
+	s.setProgram("custom_sequence", 1, total, seqName, "running")
+	defer s.clearProgram()
+
+	for i, step := range req.Steps {
+		select {
+		case <-ctx.Done():
+			s.drainOnAbort()
+			return
+		default:
+		}
+
+		stepName := step.Name
+		if stepName == "" {
+			stepName = "Команда " + itoa(int(step.Cmd))
+		}
+		s.progressStep(i+1, stepName)
+		s.addLog("INFO", "Последовательность "+itoa(i+1)+"/"+itoa(total)+": "+stepName+" (cmd="+itoa(int(step.Cmd))+")")
+
+		if step.Zone > 0 {
+			s.modbusMu.RLock()
+			mb := s.modbus
+			s.modbusMu.RUnlock()
+			if mb != nil {
+				_ = mb.WriteZone(step.Zone)
+			}
+		}
+
+		timeout := time.Duration(step.TimeoutSec) * time.Second
+		if timeout <= 0 {
+			timeout = 300 * time.Second
+		}
+
+		if err := s.modbus.SendCommand(ctx, step.Cmd, timeout); err != nil {
+			s.addLog("ERROR", "Ошибка шага "+itoa(i+1)+" ("+stepName+"): "+err.Error())
+			s.hub.Broadcast(model.WSEvent{
+				Type: "error",
+				Data: map[string]string{"code": "EXEC", "message": err.Error(), "context": stepName},
+			})
+			if step.Cmd != modbus.CmdDrainIntermediate {
+				s.drainOnAbort()
+			}
+			return
+		}
+
+		if step.DelaySec > 0 {
+			s.addLog("INFO", "Задержка шага "+itoa(i+1)+": "+itoa(step.DelaySec)+" сек...")
+			select {
+			case <-ctx.Done():
+				s.drainOnAbort()
+				return
+			case <-time.After(time.Duration(step.DelaySec) * time.Second):
+			}
+		}
+	}
+	s.addLog("INFO", seqName+": Успешно завершена")
 }
 
 func recoverPanic(program string) {
