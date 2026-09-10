@@ -123,6 +123,13 @@ func (c *Controller) AppendExecutionFact(record JournalRecord) (JournalRecord, e
 	return c.journal.Append(record)
 }
 
+func (c *Controller) RecoverExecution(executionID string) (RecoverySnapshot, error) {
+	if c == nil || c.journal == nil {
+		return RecoverySnapshot{}, fmt.Errorf("execution journal is not initialized")
+	}
+	return c.journal.RecoverExecution(executionID)
+}
+
 func (c *Controller) Close() error {
 	if c == nil || c.profile == nil {
 		return nil
