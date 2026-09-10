@@ -102,6 +102,22 @@ func TestAutoTraceRouteUsesBackendCore(t *testing.T) {
 	testutil.AssertEqual(t, len(response.Data.Edges), 1, "маршрутизировано одно ребро")
 }
 
+func TestAutoTraceAlgorithmValidation(t *testing.T) {
+	srv := newTestServer("")
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	body := []byte(`{"id":"onepap","nodes":[{"id":"start","kind":"command","label":"Start"},{"id":"stop","kind":"checkpoint","label":"Stop"}],"edges":[{"id":"e1","from":"start","to":"stop","condition":"ready == true"}],"parameters":[{"name":"zone","type":"integer","required":true}],"subgraphs":[{"id":"clean","name":"Clean","entry":"start","exit":"stop","nodeIds":["start","stop"],"inputs":[{"name":"zone","type":"integer","required":true}]}]}`)
+	resp, err := ts.Client().Post(ts.URL+"/api/v1/autotrace/algorithm/validate", "application/json", bytes.NewReader(body))
+	testutil.AssertNil(t, err, "POST /api/v1/autotrace/algorithm/validate")
+	defer resp.Body.Close()
+	testutil.AssertEqual(t, resp.StatusCode, http.StatusOK, "valid algorithm status")
+	var response struct {
+		OK bool `json:"ok"`
+	}
+	testutil.AssertNil(t, json.NewDecoder(resp.Body).Decode(&response), "декодирование algorithm validation")
+	testutil.AssertTrue(t, response.OK, "валидный алгоритм должен быть принят")
+}
+
 // TestGetStepsAndPutStep проверяет считывание 11 шагов и обновление конкретного шага через REST API.
 func TestGetStepsAndPutStep(t *testing.T) {
 	srv := newTestServer("")

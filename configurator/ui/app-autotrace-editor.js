@@ -40,6 +40,31 @@ window.AutoTraceEditor = (() => {
     { cmd: 999, name: '999 · Аварийный сброс / стоп', category: 'qc', defaultSec: 2 }
   ];
 
+  const BLOCK_TYPES = [
+    { id: 'command', label: 'Команда Modbus' },
+    { id: 'condition', label: 'Условие / ветвление' },
+    { id: 'variant', label: 'Вариант алгоритма' },
+    { id: 'subgraph', label: 'Подграф' },
+    { id: 'checkpoint', label: 'Контрольная точка' }
+  ];
+
+  function normalizeStep(step, index) {
+    return {
+      id: step.id || `step_${index + 1}`,
+      name: step.name || `Шаг ${index + 1}`,
+      cmd: Number(step.cmd || 120),
+      zone: Number(step.zone ?? 3),
+      delay_sec: Math.max(0, Number(step.delay_sec || 0)),
+      timeout_sec: Math.max(1, Number(step.timeout_sec || 300)),
+      retry_count: Math.max(0, Number(step.retry_count || 0)),
+      block_type: step.block_type || 'command',
+      variant: step.variant || 'default',
+      condition: step.condition || '',
+      automation: step.automation || 'automatic',
+      formula: step.formula || ''
+    };
+  }
+
   const PRESET_SEQUENCES = {
     sys_check: {
       name: 'Проверка системы',
@@ -114,7 +139,7 @@ window.AutoTraceEditor = (() => {
     nodePositions: {},
     formulaResults: {},
     criticalPathIds: new Set()
-    ,routedEdges: {}
+    ,routedEdges: {}, subgraphs: [], parameters: []
   };
 
   function routedPath(edge, fallback) {
@@ -127,9 +152,9 @@ window.AutoTraceEditor = (() => {
     try {
       const seqRaw = localStorage.getItem('onepap_autotrace_seq');
       if (seqRaw) {
-        state.sequence = JSON.parse(seqRaw);
+        state.sequence = JSON.parse(seqRaw).map(normalizeStep);
       } else {
-        state.sequence = PRESET_SEQUENCES.sys_check.steps.map(s => ({ ...s }));
+        state.sequence = PRESET_SEQUENCES.sys_check.steps.map(normalizeStep);
       }
 
       const btnRaw = localStorage.getItem('onepap_autotrace_buttons');
@@ -148,9 +173,13 @@ window.AutoTraceEditor = (() => {
       if (viewRaw) {
         state.activeView = viewRaw;
       }
+      const subgraphsRaw = localStorage.getItem('onepap_autotrace_subgraphs');
+      if (subgraphsRaw) state.subgraphs = JSON.parse(subgraphsRaw);
+      const paramsRaw = localStorage.getItem('onepap_autotrace_parameters');
+      if (paramsRaw) state.parameters = JSON.parse(paramsRaw);
     } catch (e) {
       console.warn('[AutoTrace] State load fallback:', e);
-      state.sequence = PRESET_SEQUENCES.sys_check.steps.map(s => ({ ...s }));
+      state.sequence = PRESET_SEQUENCES.sys_check.steps.map(normalizeStep);
       state.customButtons = DEFAULT_BUTTON_MATRIX.map(b => ({ ...b }));
     }
   }
@@ -161,6 +190,8 @@ window.AutoTraceEditor = (() => {
       localStorage.setItem('onepap_autotrace_buttons', JSON.stringify(state.customButtons));
       localStorage.setItem('onepap_autotrace_positions', JSON.stringify(state.nodePositions));
       localStorage.setItem('onepap_autotrace_view', state.activeView);
+      localStorage.setItem('onepap_autotrace_subgraphs', JSON.stringify(state.subgraphs));
+      localStorage.setItem('onepap_autotrace_parameters', JSON.stringify(state.parameters));
       const O = getO();
       if (O.state) {
         O.state.customSequence = state.sequence;
@@ -489,6 +520,60 @@ window.AutoTraceEditor = (() => {
       selCmd.onmousedown = (e) => e.stopPropagation();
       rowCmd.append(lblCmd, selCmd);
 
+      const typeRow = document.createElement('div');
+      typeRow.className = 'at-field-row';
+      const typeLabel = document.createElement('label');
+      typeLabel.textContent = 'Тип блока:';
+      const typeSelect = document.createElement('select');
+      typeSelect.className = 'inp at-select-cmd';
+      BLOCK_TYPES.forEach(type => {
+        const option = document.createElement('option');
+        option.value = type.id;
+        option.textContent = type.label;
+        option.selected = type.id === step.block_type;
+        typeSelect.appendChild(option);
+      });
+      typeSelect.onchange = () => { step.block_type = typeSelect.value; saveState(); renderFlowCanvas(); };
+      typeSelect.onmousedown = (e) => e.stopPropagation();
+      typeRow.append(typeLabel, typeSelect);
+
+      const controlGrid = document.createElement('div');
+      controlGrid.className = 'at-param-grid';
+      const variantCol = document.createElement('div');
+      variantCol.className = 'at-param-col';
+      const variantLabel = document.createElement('span');
+      variantLabel.textContent = 'Вариант';
+      const variantInput = document.createElement('input');
+      variantInput.className = 'inp at-compact-inp';
+      variantInput.value = step.variant;
+      variantInput.placeholder = 'default';
+      variantInput.oninput = () => { step.variant = variantInput.value.trim() || 'default'; saveState(); };
+      variantInput.onmousedown = (e) => e.stopPropagation();
+      variantCol.append(variantLabel, variantInput);
+
+      const retryCol = document.createElement('div');
+      retryCol.className = 'at-param-col';
+      const retryLabel = document.createElement('span');
+      retryLabel.textContent = 'Повторы';
+      const retryInput = document.createElement('input');
+      retryInput.type = 'number';
+      retryInput.min = '0';
+      retryInput.max = '9';
+      retryInput.className = 'inp at-compact-inp';
+      retryInput.value = step.retry_count;
+      retryInput.oninput = () => { step.retry_count = Math.min(9, Math.max(0, Number(retryInput.value) || 0)); saveState(); };
+      retryInput.onmousedown = (e) => e.stopPropagation();
+      retryCol.append(retryLabel, retryInput);
+      controlGrid.append(variantCol, retryCol);
+
+      const conditionInput = document.createElement('input');
+      conditionInput.className = 'inp at-formula-inp';
+      conditionInput.value = step.condition;
+      conditionInput.placeholder = 'Условие перехода: reagent_empty == false';
+      conditionInput.title = 'Декларативное условие; исполняется только проверенным backend-движком';
+      conditionInput.oninput = () => { step.condition = conditionInput.value.trim(); saveState(); };
+      conditionInput.onmousedown = (e) => e.stopPropagation();
+
       const paramGrid = document.createElement('div');
       paramGrid.className = 'at-param-grid';
 
@@ -534,7 +619,21 @@ window.AutoTraceEditor = (() => {
       inpDelay.onmousedown = (e) => e.stopPropagation();
       colDelay.append(lblDelay, inpDelay);
 
-      paramGrid.append(colZone, colDelay);
+      const colTimeout = document.createElement('div');
+      colTimeout.className = 'at-param-col';
+      const lblTimeout = document.createElement('span');
+      lblTimeout.textContent = 'Timeout (с)';
+      const inpTimeout = document.createElement('input');
+      inpTimeout.type = 'number';
+      inpTimeout.min = '1';
+      inpTimeout.max = '86400';
+      inpTimeout.className = 'inp at-compact-inp';
+      inpTimeout.value = step.timeout_sec;
+      inpTimeout.oninput = () => { step.timeout_sec = Math.min(86400, Math.max(1, Number(inpTimeout.value) || 1)); saveState(); };
+      inpTimeout.onmousedown = (e) => e.stopPropagation();
+      colTimeout.append(lblTimeout, inpTimeout);
+
+      paramGrid.append(colZone, colDelay, colTimeout);
 
       const footer = document.createElement('div');
       footer.className = 'at-node-footer';
@@ -557,7 +656,7 @@ window.AutoTraceEditor = (() => {
       durationBadge.textContent = `⏱ ~${durationSec}с`;
 
       footer.append(formulaInp, durationBadge);
-      body.append(rowCmd, paramGrid, footer);
+      body.append(rowCmd, typeRow, controlGrid, conditionInput, paramGrid, footer);
       node.append(header, titleInp, body);
 
       setupNodeDrag(node, step.id);
@@ -905,7 +1004,7 @@ window.AutoTraceEditor = (() => {
 
   function addStep() {
     const nextIdx = state.sequence.length + 1;
-    const newStep = {
+    const newStep = normalizeStep({
       id: `step_${Date.now()}`,
       name: `Шаг ${nextIdx}`,
       cmd: 120,
@@ -914,7 +1013,7 @@ window.AutoTraceEditor = (() => {
       timeout_sec: 300,
       automation: 'automatic',
       formula: '15'
-    };
+    }, state.sequence.length);
     state.sequence.push(newStep);
     saveState();
     autoLayoutNodes();
@@ -955,11 +1054,71 @@ window.AutoTraceEditor = (() => {
   function loadPreset(presetKey) {
     const preset = PRESET_SEQUENCES[presetKey];
     if (!preset) return;
-    state.sequence = preset.steps.map(s => ({ ...s, id: `step_${Date.now()}_${Math.random().toString(36).substr(2, 4)}` }));
+    state.sequence = preset.steps.map((s, index) => normalizeStep({ ...s, id: `step_${Date.now()}_${index}` }, index));
     saveState();
     autoLayoutNodes();
     updateStatsBar();
     getO().toast(`Шаблон «${preset.name}» загружен`, 'ok');
+  }
+
+  function validateSequence() {
+    const issues = [];
+    state.sequence.forEach((step, index) => {
+      const label = `Шаг ${index + 1} «${step.name || 'без названия'}»`;
+      if (!BLOCK_TYPES.some(type => type.id === step.block_type)) issues.push(`${label}: неизвестный тип блока`);
+      if (step.block_type === 'condition' && !step.condition) issues.push(`${label}: задайте условие`);
+      if (step.block_type === 'variant' && (!step.variant || step.variant === 'default')) issues.push(`${label}: задайте имя варианта`);
+      if (step.block_type === 'subgraph' && !step.subgraph_id) issues.push(`${label}: не выбран подграф`);
+      if (!Number.isInteger(Number(step.cmd)) || Number(step.cmd) < 0) issues.push(`${label}: некорректная Modbus-команда`);
+      if (Number(step.timeout_sec) < 1) issues.push(`${label}: timeout должен быть больше нуля`);
+      if (Number(step.retry_count) < 0 || Number(step.retry_count) > 9) issues.push(`${label}: повторы должны быть от 0 до 9`);
+    });
+    return issues;
+  }
+
+  function buildAlgorithmModel() {
+    const nodes = state.sequence.map((step, index) => ({
+      id: step.id || `step_${index + 1}`,
+      kind: step.block_type || 'command',
+      label: step.name || `Шаг ${index + 1}`,
+      variant: step.variant || 'default',
+      command: Number(step.cmd || 0),
+      config: { zone: String(step.zone ?? 3), timeout_sec: String(step.timeout_sec || 300), retry_count: String(step.retry_count || 0) }
+    }));
+    const edges = state.sequence.slice(0, -1).map((step, index) => ({
+      id: `edge-${step.id}-${state.sequence[index + 1].id}`,
+      from: step.id,
+      to: state.sequence[index + 1].id,
+      condition: state.sequence[index + 1].condition || '',
+      priority: index
+    }));
+    return { id: 'onepap-main-algorithm', nodes, edges, parameters: state.parameters, subgraphs: state.subgraphs };
+  }
+
+  async function validateAlgorithmModel() {
+    const O = getO();
+    try {
+      const result = await O.request('/autotrace/algorithm/validate', { method: 'POST', body: buildAlgorithmModel(), timeout: 10000 });
+      O.toast(`Алгоритм валиден: ${result.nodes} блоков, ${result.edges} связей, ${result.subgraphs} подграфов.`, 'ok');
+    } catch (error) {
+      O.toast(`Граф невалиден: ${error.message}`, 'error');
+    }
+  }
+
+  function createSubgraph() {
+    const O = getO();
+    if (state.sequence.length < 2) { O.toast('Для подграфа нужно минимум два блока.', 'error'); return; }
+    const name = window.prompt('Название нового подграфа:', 'Подграф ONEPAP');
+    if (!name?.trim()) return;
+    const parameterName = window.prompt('Имя входного параметра (можно оставить пустым):', 'zone');
+    const id = `subgraph_${Date.now()}`;
+    state.subgraphs.push({
+      id, name: name.trim(), entry: state.sequence[0].id, exit: state.sequence[state.sequence.length - 1].id,
+      nodeIds: state.sequence.map(step => step.id),
+      inputs: parameterName?.trim() ? [{ name: parameterName.trim(), type: 'string', required: false, default: '' }] : []
+    });
+    saveState();
+    O.toast(`Подграф «${name.trim()}» создан с ${state.sequence.length} блоками.`, 'ok');
   }
 
   async function calculateRoutes() {
@@ -1038,7 +1197,8 @@ window.AutoTraceEditor = (() => {
       version: '2.0',
       exportedAt: new Date().toISOString(),
       sequence: state.sequence,
-      buttons: state.customButtons
+      buttons: state.customButtons,
+      algorithm: buildAlgorithmModel()
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -1063,6 +1223,8 @@ window.AutoTraceEditor = (() => {
         if (Array.isArray(parsed.buttons)) {
           state.customButtons = parsed.buttons;
         }
+        if (Array.isArray(parsed.algorithm?.subgraphs)) state.subgraphs = parsed.algorithm.subgraphs;
+        if (Array.isArray(parsed.algorithm?.parameters)) state.parameters = parsed.algorithm.parameters;
         saveState();
         autoLayoutNodes();
         updateStatsBar();
@@ -1108,6 +1270,26 @@ window.AutoTraceEditor = (() => {
       btnRoute.textContent = '⟐ Рассчитать трассы';
       btnAutoLayout.parentElement.appendChild(btnRoute);
     }
+    let btnValidate = document.getElementById('at-btn-validate');
+    if (!btnValidate && btnAutoLayout?.parentElement) {
+      btnValidate = document.createElement('button');
+      btnValidate.id = 'at-btn-validate';
+      btnValidate.type = 'button';
+      btnValidate.className = 'btn btn-secondary at-tool-btn';
+      btnValidate.title = 'Проверить общий алгоритм на backend';
+      btnValidate.textContent = '✓ Проверить граф';
+      btnAutoLayout.parentElement.appendChild(btnValidate);
+    }
+    let btnSubgraph = document.getElementById('at-btn-subgraph');
+    if (!btnSubgraph && btnAutoLayout?.parentElement) {
+      btnSubgraph = document.createElement('button');
+      btnSubgraph.id = 'at-btn-subgraph';
+      btnSubgraph.type = 'button';
+      btnSubgraph.className = 'btn btn-secondary at-tool-btn';
+      btnSubgraph.title = 'Сохранить текущую цепочку как параметризованный подграф';
+      btnSubgraph.textContent = '＋ Подграф';
+      btnAutoLayout.parentElement.appendChild(btnSubgraph);
+    }
     const btnAddStep = document.getElementById('btn-seq-add');
     const btnExport = document.getElementById('at-btn-export');
     const btnImport = document.getElementById('at-btn-import');
@@ -1118,7 +1300,18 @@ window.AutoTraceEditor = (() => {
     if (btnZoomReset) btnZoomReset.onclick = () => { state.zoom = 1.0; state.panX = 40; state.panY = 30; renderFlowCanvas(); };
     if (btnAutoLayout) btnAutoLayout.onclick = () => autoLayoutNodes();
     if (btnRoute) btnRoute.onclick = () => calculateRoutes();
+    if (btnValidate) btnValidate.onclick = () => validateAlgorithmModel();
+    if (btnSubgraph) btnSubgraph.onclick = () => createSubgraph();
     if (btnAddStep) btnAddStep.onclick = () => addStep();
+    const runSequence = document.getElementById('btn-seq-run');
+    if (runSequence) runSequence.addEventListener('click', (event) => {
+      const issues = validateSequence();
+      if (issues.length > 0) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        getO().toast(`Сценарий не готов: ${issues[0]}${issues.length > 1 ? ` (+${issues.length - 1})` : ''}`, 'error');
+      }
+    }, true);
     if (btnExport) btnExport.onclick = () => exportJSON();
     if (btnImport && fileImport) {
       btnImport.onclick = () => fileImport.click();
@@ -1148,8 +1341,12 @@ window.AutoTraceEditor = (() => {
     loadPreset,
     autoLayoutNodes,
     calculateRoutes,
+    buildAlgorithmModel,
+    validateAlgorithmModel,
+    createSubgraph,
     exportJSON,
     importJSON,
+    validateSequence,
     handleTelemetryProgress,
     getState: () => state
   };

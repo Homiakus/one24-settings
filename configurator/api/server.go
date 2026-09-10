@@ -126,6 +126,7 @@ func (s *Server) routes(uiFS embed.FS) {
 	s.mux.HandleFunc("POST /api/v1/programs/stain/reagent-cancel", s.handleReagentCancel)
 	s.mux.HandleFunc("POST /api/v1/programs/sequence/execute", s.handleCustomSequence)
 	s.mux.HandleFunc("POST /api/v1/autotrace/route", s.handleAutoTraceRoute)
+	s.mux.HandleFunc("POST /api/v1/autotrace/algorithm/validate", s.handleAutoTraceAlgorithmValidate)
 
 	s.mux.HandleFunc("GET /api/v1/testing/sensors", s.handleSensors)
 	s.mux.HandleFunc("POST /api/v1/testing/selector", s.handleSelector)
