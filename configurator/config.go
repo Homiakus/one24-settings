@@ -56,15 +56,16 @@ type SecurityConfig struct {
 
 // FileConfig — пути к файлам.
 type FileConfig struct {
-	UserSettings string `toml:"user_settings"`
-	LogFile      string `toml:"log_file"`
+	UserSettings    string `toml:"user_settings"`
+	LogFile         string `toml:"log_file"`
+	OrchestratorDir string `toml:"orchestrator_dir"`
 }
 
 // DefaultConfig возвращает конфигурацию с безопасными значениями по умолчанию.
 func DefaultConfig() Config {
 	return Config{
 		Server: ServerConfig{
-			Port:               8080,
+			Port:               0,
 			Host:               "127.0.0.1",
 			ReadTimeoutSec:     30,
 			WriteTimeoutSec:    0,
@@ -93,8 +94,9 @@ func DefaultConfig() Config {
 			MaxWSClients:    16,
 		},
 		Files: FileConfig{
-			UserSettings: "user_settings.toml",
-			LogFile:      "modbus-configurator.log",
+			UserSettings:    "user_settings.toml",
+			LogFile:         "modbus-configurator.log",
+			OrchestratorDir: "runtime/axiom",
 		},
 	}
 }

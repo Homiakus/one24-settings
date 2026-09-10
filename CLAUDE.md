@@ -32,13 +32,19 @@
 - **Датчики:** концевики (LJ8A3-2-Z/BX), тензодатчик (HX711), датчик жидкости, ультразвуковой датчик уровня
 
 ### Программный стек
-- **Язык:** Go 1.22 (управляющее ПО)
-- **UI:** Web/htmx SPA (Wails v2 + WebView2)
+- **Управляющее ПО / Бэкенд:** Go 1.22+ (REST API, WebSocket hub, Modbus RTU)
+- **Десктопная оболочка:** Wails v3 + WebView2 — единый автономный бинарник без окон консоли
+- **UI:** Web/htmx SPA (HTML5/CSS3/Vanilla JS) со встроенным WebSocket
 - **Конфигурация:** TOML (BurntSushi/toml)
 - **Modbus-библиотека:** goburrow/modbus
 - **Симуляция:** Test Control Module (tcm_v2) для отладки без железа
 
-### Связанные каталоги
+### Управление и сборка
+- `.\onepap.ps1 start` — сборка и запуск единого десктопного приложения в легковесном окне
+- `.\onepap.ps1 start -ServerOnly` — запуск только сервера в фоне
+- `.\onepap.ps1 build` — сборка единого бинарника `artifacts/onepap-modbus-configurator.exe`
+- `.\onepap.ps1 check` — проверка качества (gofmt, vet, race tests)
+- `.\onepap.ps1 doctor` — диагностика Go, Rust, портов и окружения
 - `../11_Software/Main-v6/` — исходный код ПО управления
 - `../11_Software/Main-v6/config/fsm/screens/` — FSM-конфиги экранов (исполняемый источник истины)
 - `../09_архив/Wails-v2/labflow/config/` — архивные TOML-конфиги (base_config.toml, user_settings.toml)

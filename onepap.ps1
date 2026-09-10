@@ -11,6 +11,7 @@ param(
     [switch]$StrictPort,
     [switch]$Foreground,
     [switch]$NoBrowser,
+    [switch]$ServerOnly,
     [switch]$Deep
 )
 
@@ -19,12 +20,14 @@ $ErrorActionPreference = "Stop"
 
 $Root = $PSScriptRoot
 $AppDir = Join-Path $Root "configurator"
+$DesktopDir = Join-Path $Root "desktop\ONEPAP.24_Modbus_Configurator"
 $RuntimeDir = Join-Path $Root ".runtime"
 $RuntimeFile = Join-Path $RuntimeDir "server.json"
 $StdoutLog = Join-Path $RuntimeDir "server.stdout.log"
 $StderrLog = Join-Path $RuntimeDir "server.stderr.log"
 $ArtifactsDir = Join-Path $Root "artifacts"
-$Executable = Join-Path $ArtifactsDir "modbus-configurator.exe"
+$BackendBinary = Join-Path $ArtifactsDir "modbus-backend.exe"
+$Executable = Join-Path $ArtifactsDir "onepap-modbus-configurator.exe"
 $DefaultConfig = Join-Path $AppDir "configurator.toml"
 
 function Write-Section([string]$Title) {
@@ -105,26 +108,44 @@ function Test-BinaryNeedsBuild {
     }
 
     $binaryTime = (Get-Item -LiteralPath $Executable).LastWriteTimeUtc
-    $sourcePatterns = @("*.go", "*.html", "*.css", "*.js", "go.mod", "go.sum", "configurator.toml")
-    $newerSource = Get-ChildItem -LiteralPath $AppDir -Recurse -File -Include $sourcePatterns |
+    $sourcePatterns = @("*.go", "*.html", "*.css", "*.js", "go.mod", "go.sum", "configurator.toml", "package.json", "vite.config.js")
+    $newerSource = Get-ChildItem -LiteralPath @($AppDir, $DesktopDir) -Recurse -File -Include $sourcePatterns |
         Where-Object { $_.LastWriteTimeUtc -gt $binaryTime } |
         Select-Object -First 1
     return $null -ne $newerSource
 }
 
 function Build-OnePap {
-    Write-Section "Сборка"
+    Write-Section "Сборка единого десктопного приложения (Go + Wails v3)"
     [void](Assert-Command "go")
     New-Item -ItemType Directory -Path $ArtifactsDir -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $DesktopDir "backend") -Force | Out-Null
 
+    $targetBackend = Join-Path $DesktopDir "backend\modbus-backend.exe"
+
+    Write-Host "[1/2] Компиляция встроенного Go-бэкенда..." -ForegroundColor Cyan
     Invoke-InAppDirectory {
         go mod download
         if ($LASTEXITCODE -ne 0) { throw "Не удалось загрузить Go-модули" }
-        go build -trimpath -o $Executable .
+        go build -trimpath -o $targetBackend .
     }
 
+    Write-Host "[2/2] Компиляция Wails v3 Desktop оболочки..." -ForegroundColor Cyan
+    Push-Location $DesktopDir
+    try {
+        wails3 build
+        if ($LASTEXITCODE -ne 0) { throw "Ошибка сборки Wails v3 desktop приложения" }
+        Copy-Item -LiteralPath (Join-Path $DesktopDir "bin\onepap-24-modbus-configurator.exe") -Destination $Executable -Force
+    }
+    finally { Pop-Location }
+
+    # Удаляем старые/промежуточные бинарники из artifacts, оставляя строго один единый бинарник
+    Get-ChildItem -LiteralPath $ArtifactsDir -Filter "*.exe" |
+        Where-Object { $_.FullName -ne $Executable } |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+
     $item = Get-Item -LiteralPath $Executable
-    Write-Host "Готово: $($item.FullName) ($([math]::Round($item.Length / 1MB, 2)) МБ)" -ForegroundColor Green
+    Write-Host "`nГотово: Единственный бинарник создан -> $($item.FullName) ($([math]::Round($item.Length / 1MB, 2)) МБ)" -ForegroundColor Green
 }
 
 function Ensure-Binary {
@@ -176,6 +197,9 @@ function Start-OnePap {
     }
     if ($StrictPort) {
         $arguments += "-strict-port"
+    }
+    if ($ServerOnly) {
+        $arguments += "-server-only"
     }
 
     Write-Section "Запуск"
@@ -339,32 +363,37 @@ function Test-LoopbackPort([int]$PortNumber) {
 }
 
 function Show-Doctor {
-    Write-Section "Диагностика"
+    Write-Section "Диагностика окружения"
 
     $go = Get-Command go -ErrorAction SilentlyContinue
     if ($go) {
-        Write-Host "Go:     $(& go version)" -ForegroundColor Green
+        Write-Host "Go:        $(& go version)" -ForegroundColor Green
     }
-    elseif (Test-Path -LiteralPath $Executable) {
-        Write-Host "Go:     не установлен, но готовый EXE найден" -ForegroundColor Yellow
+    elseif (Test-Path -LiteralPath $BackendBinary) {
+        Write-Host "Go:        не установлен, но готовый Go бинарник найден" -ForegroundColor Yellow
     }
     else {
-        Write-Host "Go:     не установлен и EXE отсутствует" -ForegroundColor Red
+        Write-Host "Go:        не установлен и бинарник отсутствует" -ForegroundColor Red
     }
 
+    $wails = Get-Command wails3 -ErrorAction SilentlyContinue
+    if ($wails) { Write-Host "Wails:     $(& wails3 version)" -ForegroundColor Green }
+    elseif (Test-Path -LiteralPath $Executable) { Write-Host "Wails:     не установлен, но готовый Desktop EXE найден" -ForegroundColor Yellow }
+    else { Write-Host "Wails:     не установлен" -ForegroundColor Red }
+
     $configPath = Resolve-ConfigPath
-    Write-Host "Config: $configPath"
+    Write-Host "Config:    $configPath"
     $configuredPort = if ($Port -ge 0) { $Port } else { Get-ConfiguredServerPort $configPath }
     if ($configuredPort -eq 0) {
-        Write-Host "HTTP:   автоматический свободный порт" -ForegroundColor Green
+        Write-Host "HTTP:      автоматический свободный порт" -ForegroundColor Green
     }
     else {
         $portCheck = Test-LoopbackPort $configuredPort
         if ($portCheck.Available) {
-            Write-Host "HTTP:   127.0.0.1:$configuredPort доступен" -ForegroundColor Green
+            Write-Host "HTTP:      127.0.0.1:$configuredPort доступен" -ForegroundColor Green
         }
         else {
-            Write-Host "HTTP:   127.0.0.1:$configuredPort недоступен — $($portCheck.Error)" -ForegroundColor Red
+            Write-Host "HTTP:      127.0.0.1:$configuredPort недоступен — $($portCheck.Error)" -ForegroundColor Red
             if (Get-Command Get-NetTCPConnection -ErrorAction SilentlyContinue) {
                 Get-NetTCPConnection -LocalPort $configuredPort -ErrorAction SilentlyContinue |
                     Select-Object LocalAddress, LocalPort, State, OwningProcess |
@@ -377,18 +406,18 @@ function Show-Doctor {
 
     $ports = @([System.IO.Ports.SerialPort]::GetPortNames() | Sort-Object)
     if ($ports.Count -gt 0) {
-        Write-Host "COM:    $($ports -join ', ')" -ForegroundColor Green
+        Write-Host "COM:       $($ports -join ', ')" -ForegroundColor Green
     }
     else {
-        Write-Host "COM:    последовательные порты не найдены" -ForegroundColor Yellow
+        Write-Host "COM:       последовательные порты не найдены" -ForegroundColor Yellow
     }
 
     $managed = Get-ManagedProcess
     if ($managed) {
-        Write-Host "Server: PID=$($managed.Info.pid), $($managed.Info.url)" -ForegroundColor Green
+        Write-Host "Desktop:   PID=$($managed.Info.pid), $($managed.Info.url)" -ForegroundColor Green
     }
     else {
-        Write-Host "Server: остановлен"
+        Write-Host "Desktop:   остановлен"
     }
 }
 
@@ -399,6 +428,7 @@ function Clean-OnePap {
     $paths = @(
         $RuntimeDir,
         $ArtifactsDir,
+        (Join-Path $DesktopDir "target"),
         (Join-Path $AppDir "modbus-configurator.exe"),
         (Join-Path $AppDir "modbus-configurator.log"),
         (Join-Path $Root "modbus-configurator.log")
@@ -430,7 +460,8 @@ function Show-Help {
     @"
 ONEPAP.24 — единый скрипт управления
 
-  .\onepap.ps1 start                 собрать при необходимости, запустить и открыть UI
+  .\onepap.ps1 start                 собрать единый EXE и запустить Wails v3 окно
+  .\onepap.ps1 start -ServerOnly     запустить только Go-сервер без окна браузера
   .\onepap.ps1 start -Port 0         выбрать свободный HTTP-порт автоматически
   .\onepap.ps1 start -Port 8083      запросить конкретный порт с безопасным fallback
   .\onepap.ps1 start -StrictPort     завершить запуск, если выбранный порт недоступен
@@ -438,10 +469,10 @@ ONEPAP.24 — единый скрипт управления
   .\onepap.ps1 restart               перезапустить
   .\onepap.ps1 status                показать PID, URL и HTTP-состояние
   .\onepap.ps1 open                  открыть текущий UI
-  .\onepap.ps1 build                 собрать Windows EXE
+  .\onepap.ps1 build                 собрать единый Windows EXE (Go + Wails v3/WebView2)
   .\onepap.ps1 test                  запустить тесты
   .\onepap.ps1 check                 gofmt + vet + race tests
-  .\onepap.ps1 doctor                проверить Go, HTTP-порт, COM-порты и runtime
+  .\onepap.ps1 doctor                проверить Go, Wails v3, HTTP-порт, COM-порты и runtime
   .\onepap.ps1 logs                  показать последние журналы
   .\onepap.ps1 clean                 удалить сборки, runtime, логи и кэши
   .\onepap.ps1 clean -Deep           дополнительно удалить кэш Go-модулей

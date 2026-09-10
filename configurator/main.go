@@ -15,6 +15,7 @@ import (
 
 	"modbus-configurator/api"
 	"modbus-configurator/modbus"
+	"modbus-configurator/orchestrator"
 	"modbus-configurator/ws"
 )
 
@@ -44,6 +45,16 @@ func run() error {
 	if *portOverride >= 0 {
 		cfg.Server.Port = *portOverride
 	}
+
+	stateDir := cfg.Files.OrchestratorDir
+	if !filepath.IsAbs(stateDir) {
+		stateDir = filepath.Join(filepath.Dir(*configPath), stateDir)
+	}
+	coord, err := orchestrator.Open(stateDir)
+	if err != nil {
+		return fmt.Errorf("инициализировать Axiom-оркестратор: %w", err)
+	}
+	defer coord.Close()
 
 	listenInfo, err := listenHTTP(cfg.Server.Host, cfg.Server.Port, !*strictPort)
 	if err != nil {
@@ -113,6 +124,10 @@ func run() error {
 		WriteTimeout: time.Duration(cfg.Server.WriteTimeoutSec) * time.Second,
 		IdleTimeout:  120 * time.Second,
 	}
+	ctx := context.Background()
+	if err := coord.Dispatch(ctx, orchestrator.Started{PID: os.Getpid(), Address: listenInfo.BoundAddress}); err != nil {
+		return fmt.Errorf("записать запуск в Axiom: %w", err)
+	}
 
 	absoluteConfigPath, err := filepath.Abs(*configPath)
 	if err != nil {
@@ -147,6 +162,9 @@ func run() error {
 		log.Printf("[main] запущен %s", listenInfo.BoundAddress)
 		serveErr <- httpServer.Serve(listenInfo.Listener)
 	}()
+	if err := coord.Dispatch(ctx, orchestrator.Ready{Address: listenInfo.BoundAddress}); err != nil {
+		return fmt.Errorf("зафиксировать готовность в Axiom: %w", err)
+	}
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
@@ -155,10 +173,13 @@ func run() error {
 	select {
 	case <-stop:
 		log.Printf("[main] остановка...")
+		_ = coord.Dispatch(ctx, orchestrator.Stopping{Reason: "signal"})
 	case err := <-serveErr:
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			_ = coord.Dispatch(ctx, orchestrator.Failed{Component: "http", Err: err.Error()})
 			return fmt.Errorf("HTTP-сервер остановлен: %w", err)
 		}
+		_ = coord.Dispatch(ctx, orchestrator.Stopping{Reason: "server-closed"})
 		return nil
 	}
 
