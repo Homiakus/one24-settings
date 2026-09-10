@@ -96,6 +96,176 @@ Status: TODO
 - Остаются edge-condition editor, полноценный DAG executor и безопасный
   runtime binding параметров подграфа.
 
+### AUDIT-001 — математический и кибернетический аудит
+
+Status: DONE
+
+- Подтверждено, что текущая модель исполнения остаётся линейной: UI-граф,
+  `AlgorithmDefinition` и Modbus executor не являются единым контрактом.
+- Зафиксированы P0-риски: расхождение кодов команд UI/backend, игнорирование
+  условий/вариантов/retry/subgraph при исполнении и отсутствие durable journal
+  фактических Modbus-эффектов.
+- Зафиксированы математические дефекты: сумма всех времён вместо longest path,
+  `prev.time` вместо зависимостей DAG, молчаливый fallback формул и неверное
+  определение bottleneck.
+- Зафиксированы архитектурные дефекты: глобальный program state, слабая
+  семантическая validation, смешение liveness/readiness и отсутствие resource
+  model.
+
+### CONTRACT-001 — единый versioned AlgorithmDefinition
+
+Status: TODO
+
+Priority: P0
+
+Prerequisites: AUDIT-001
+
+- Ввести единую схему `AlgorithmDefinition v1`: `nodes`, `edges`, `parameters`,
+  `subgraphs`, `resources`, `entry`, `exit`, `metadata`.
+- Использовать одну схему в UI, Go API, экспортируемом JSON, Wails и executor;
+  запретить silent discard неизвестных полей.
+- Добавить явные типы узлов: `command`, `condition`, `variant`, `subgraph`,
+  `checkpoint`, `parallel_join`, `loop`.
+- Добавить schema version, stable IDs, units и provenance для каждого
+  параметра/команды.
+- Gate: round-trip export/import без потери полей и contract tests для Go/UI.
+
+### MODBUS-001 — canonical command registry
+
+Status: TODO
+
+Priority: P0
+
+Prerequisites: CONTRACT-001
+
+- Сделать `configurator/modbus` единственным источником кодов команд и их
+  свойств; UI должен получать registry через API или generated JSON.
+- Устранить расхождения `90/120`, `110/105`, `180/150`, `200/170`,
+  `111/999` и добавить тест полного равенства registry UI/backend.
+- Для каждой команды описать `idempotency`, допустимые зоны, требуемые
+  ресурсы, безопасную отмену, timeout и recovery action.
+- Gate: неизвестная или опасная команда не проходит validation; zero hardware
+  command mismatch.
+
+### GRAPH-001 — строгая семантическая валидация графа
+
+Status: TODO
+
+Priority: P0
+
+Prerequisites: CONTRACT-001
+
+- Проверять уникальность node/edge/parameter/subgraph IDs, допустимые kinds,
+  command registry и корректность port types.
+- Проверять entry/exit, достижимость, dead ends, циклы и разрешать циклы только
+  через типизированный bounded loop с лимитом итераций.
+- Проверять branch completeness: mutually exclusive conditions, fallback branch,
+  deterministic priority и поведение `unknown`.
+- Проверять принадлежность `nodeIds` и внутренних edges подграфу, отсутствие
+  рекурсивных вызовов и корректность entry/exit подграфа.
+- Gate: negative/property tests на циклы, dangling edges, duplicate IDs,
+  missing fallback, invalid bindings и resource conflicts.
+
+### MATH-001 — корректная модель времени и надёжности
+
+Status: TODO
+
+Priority: P0
+
+Prerequisites: CONTRACT-001, GRAPH-001
+
+- Заменить сумму узлов на DAG longest-path; для parallel branches считать
+  `max(branch_duration)`, для join учитывать готовность всех входов.
+- Убрать `prev.time`; формулы должны ссылаться на stable node IDs и проходить
+  typed expression parser без `Function`/silent fallback.
+- Рассчитывать отдельно nominal, worst-case и expected duration с учётом retry,
+  timeout, failure probability и recovery action.
+- Разделить machine/operator/wait/transport/recovery time; bottleneck считать
+  по ресурсу и очереди, а не по максимальному локальному времени.
+- Gate: golden models для serial, branch, join, retry, loop и resource conflict;
+  результаты сверяются с ручным эталоном.
+
+### RUNTIME-001 — безопасный DAG executor
+
+Status: TODO
+
+Priority: P0
+
+Prerequisites: CONTRACT-001, GRAPH-001, MODBUS-001
+
+- Исполнять граф по readiness/conditions, а не по `[]SequenceStep` порядку.
+- Ввести state machine узла: `pending`, `ready`, `written`, `start_confirmed`,
+  `running`, `completed`, `failed`, `unknown`, `quarantined`.
+- Требовать подтверждение перехода PLC в busy; отсутствие подтверждения не
+  считать успешным завершением.
+- Реализовать bounded retry только для идемпотентных действий; ambiguous
+  external effect переводить в `unknown` и останавливать опасные продолжения.
+- Реализовать checkpoints перед/после external effect и explicit resume policy.
+- Gate: deterministic executor tests с fake PLC и fault injection после записи,
+  во время polling, при timeout и при потере COM.
+
+### AXIOM-003 — durable execution journal и recovery
+
+Status: TODO
+
+Priority: P0
+
+Prerequisites: RUNTIME-001
+
+- Расширить Axiom за пределы lifecycle: execution ID, graph revision/digest,
+  node attempt, input digest, command intent, outcome, evidence ref и fence token.
+- Сделать операции idempotent/replay-safe; после restart восстанавливать только
+  доказанные checkpoints, неоднозначные команды помещать в quarantine.
+- Убрать глобальный `programMu` и перенести execution ownership в runtime
+  controller, связанный с Axiom execution.
+- Gate: crash/restart/replay test с доказанным отсутствием двойного physical
+  effect; состояние `/healthz` показывает execution, node и recovery phase.
+
+### RESOURCE-001 — ресурсная и безопасностная модель аппарата
+
+Status: TODO
+
+Priority: P1
+
+Prerequisites: CONTRACT-001, MODBUS-001
+
+- Описать ресурсы: rotor, selector1, selector2, pump, valves, zones, waste
+  tank, operator и их capacity/exclusive locks.
+- Для команд задать preconditions, interlocks, postconditions и safe abort.
+- Запретить графы, которые требуют несовместимых ресурсов или одновременного
+  управления конфликтующими зонами.
+- Gate: проверка конфликтов на тестовых алгоритмах и safety matrix для PLC.
+
+### API-001 — разделение liveness/readiness/diagnostics
+
+Status: TODO
+
+Priority: P1
+
+Prerequisites: AXIOM-003
+
+- Разделить `/livez`, `/readyz`, `/healthz` и `/modbus/status`.
+- `/livez` не должен выполнять serial I/O; Modbus probe должен иметь отдельный
+  timeout и не блокировать диагностику процесса.
+- Все ошибки executor/Axiom связывать с operation ID и structured event log.
+- Gate: timeout tests для недоступного COM и проверка HTTP-кодов в degraded state.
+
+### TEST-001 — математические, контрактные и fault-injection gates
+
+Status: TODO
+
+Priority: P1
+
+Prerequisites: MATH-001, RUNTIME-001, AXIOM-003, RESOURCE-001
+
+- Добавить property-based tests графа и формул, race tests executor и replay
+  tests Axiom journal.
+- Добавить fake PLC с моделями busy/complete/error/ambiguous states.
+- Добавить real-process smoke: Wails EXE, HTTP, WebSocket, runtime-file и
+  restart/recovery sequence.
+- Разделять local PASS от HIL/hosted-CI/production evidence; не продвигать
+  release без аппаратного подтверждения.
+
 ### RELEASE-001 — внешняя квалификация
 
 Status: BLOCKED
