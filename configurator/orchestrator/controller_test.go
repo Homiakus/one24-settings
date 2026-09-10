@@ -54,3 +54,41 @@ func TestControllerPersistsFailure(t *testing.T) {
 		t.Fatalf("failure state = %#v", state)
 	}
 }
+
+func TestControllerPersistsExecutionFact(t *testing.T) {
+	dir := t.TempDir()
+	c, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fact, err := c.AppendExecutionFact(JournalRecord{
+		ExecutionID:   "exec-1",
+		GraphRevision: "graph-1",
+		NodeID:        "node-1",
+		Attempt:       1,
+		CommandIntent: "cmd:90",
+		State:         "unknown",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fact.Seq != 1 || fact.State != "unknown" || fact.Digest == "" {
+		t.Fatalf("execution fact = %#v", fact)
+	}
+	if err := c.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	c, err = Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	next, err := c.AppendExecutionFact(JournalRecord{ExecutionID: "exec-1", NodeID: "node-1", State: "quarantined"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Seq != 2 || next.PrevDigest != fact.Digest {
+		t.Fatalf("reopened execution journal = %#v", next)
+	}
+}

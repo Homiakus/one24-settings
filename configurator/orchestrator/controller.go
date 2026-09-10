@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -38,6 +39,7 @@ type Controller struct {
 	profile *profile.DurableSingleNode
 	engine  *axiom.FlowEngine[State]
 	exec    *axiom.FlowExecution[State]
+	journal *Journal
 	mu      sync.Mutex
 }
 
@@ -86,7 +88,12 @@ func Open(dir string) (*Controller, error) {
 		_ = p.Close()
 		return nil, fmt.Errorf("open axiom durable flow: %w", err)
 	}
-	return &Controller{profile: p, engine: engine, exec: engine.Execution("configurator")}, nil
+	journal, err := OpenJournal(filepath.Join(dir, "executions"))
+	if err != nil {
+		_ = p.Close()
+		return nil, fmt.Errorf("open execution journal: %w", err)
+	}
+	return &Controller{profile: p, engine: engine, exec: engine.Execution("configurator"), journal: journal}, nil
 }
 
 func (c *Controller) Dispatch(ctx context.Context, event any) error {
@@ -107,9 +114,23 @@ func (c *Controller) State(ctx context.Context) (State, error) {
 	return c.exec.State(ctx)
 }
 
+// AppendExecutionFact durably records an execution boundary. Callers must use
+// state=unknown when the external effect cannot be proven either way.
+func (c *Controller) AppendExecutionFact(record JournalRecord) (JournalRecord, error) {
+	if c == nil || c.journal == nil {
+		return JournalRecord{}, fmt.Errorf("execution journal is not initialized")
+	}
+	return c.journal.Append(record)
+}
+
 func (c *Controller) Close() error {
 	if c == nil || c.profile == nil {
 		return nil
 	}
-	return c.profile.Close()
+	journalErr := c.journal.Close()
+	profileErr := c.profile.Close()
+	if journalErr != nil {
+		return journalErr
+	}
+	return profileErr
 }
