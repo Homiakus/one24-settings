@@ -113,6 +113,10 @@ func run() error {
 		MaxWSClients:      cfg.Security.MaxWSClients,
 		Zone:              uint16(cfg.Modbus.Zone),
 		OrchestratorState: func(ctx context.Context) (any, error) { return coord.State(ctx) },
+		AppendExecutionFact: func(record orchestrator.JournalRecord) error {
+			_, err := coord.AppendExecutionFact(record)
+			return err
+		},
 	}
 	srv, err := api.New(mbClient, hub, uiFS, srvCfg)
 	if err != nil {

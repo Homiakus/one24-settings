@@ -12,6 +12,7 @@ import (
 
 	"modbus-configurator/modbus"
 	"modbus-configurator/model"
+	"modbus-configurator/orchestrator"
 	"modbus-configurator/ws"
 )
 
@@ -27,11 +28,12 @@ type Server struct {
 
 // ServerConfig — настройки из main.
 type ServerConfig struct {
-	RateLimitRPS      int
-	APIKey            string
-	MaxWSClients      int
-	Zone              uint16 // зона по умолчанию (1, 2, или 3)
-	OrchestratorState func(context.Context) (any, error)
+	RateLimitRPS        int
+	APIKey              string
+	MaxWSClients        int
+	Zone                uint16 // зона по умолчанию (1, 2, или 3)
+	OrchestratorState   func(context.Context) (any, error)
+	AppendExecutionFact func(orchestrator.JournalRecord) error
 }
 
 // ServerState — разделяемое состояние с защитой мьютексом.

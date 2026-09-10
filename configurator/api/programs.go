@@ -11,6 +11,7 @@ import (
 
 	"modbus-configurator/modbus"
 	"modbus-configurator/model"
+	"modbus-configurator/orchestrator"
 )
 
 var programMu sync.Mutex
@@ -19,6 +20,15 @@ type programCtx struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	gen    uint64 // поколение: защищает от ABA-гонки при перезапуске
+}
+
+type executionIDContextKey struct{}
+
+func executionID(ctx context.Context) string {
+	if id, ok := ctx.Value(executionIDContextKey{}).(string); ok {
+		return id
+	}
+	return ""
 }
 
 var (
@@ -34,6 +44,7 @@ func startProgram() (context.Context, context.CancelFunc, uint64, bool) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	programGenSeq++
+	ctx = context.WithValue(ctx, executionIDContextKey{}, "program-"+itoa(int(programGenSeq)))
 	activeProgram = &programCtx{ctx: ctx, cancel: cancel, gen: programGenSeq}
 	return ctx, cancel, programGenSeq, true
 }
@@ -647,11 +658,19 @@ func (s *Server) runSimpleCmd(ctx context.Context, cmd uint16, program, label st
 	s.setProgram(program, 1, 1, label, "running")
 	defer s.clearProgram()
 	s.addLog("INFO", label)
+	s.recordExecutionFact(orchestrator.JournalRecord{
+		ExecutionID: executionID(ctx), NodeID: program, Attempt: 1,
+		CommandIntent: "cmd:" + itoa(int(cmd)), State: "intent",
+	})
 	timeout := 300 * time.Second
 	if cmd == modbus.CmdSedimentation {
 		timeout = 600 * time.Second
 	}
 	if err := s.modbus.SendCommand(ctx, cmd, timeout); err != nil {
+		s.recordExecutionFact(orchestrator.JournalRecord{
+			ExecutionID: executionID(ctx), NodeID: program, Attempt: 1,
+			CommandIntent: "cmd:" + itoa(int(cmd)), Outcome: err.Error(), State: "unknown",
+		})
 		s.addLog("ERROR", label+": "+err.Error())
 		s.hub.Broadcast(model.WSEvent{
 			Type: "error",
@@ -659,6 +678,10 @@ func (s *Server) runSimpleCmd(ctx context.Context, cmd uint16, program, label st
 		})
 		return
 	}
+	s.recordExecutionFact(orchestrator.JournalRecord{
+		ExecutionID: executionID(ctx), NodeID: program, Attempt: 1,
+		CommandIntent: "cmd:" + itoa(int(cmd)), Outcome: "completed", State: "completed",
+	})
 	s.addLog("INFO", label+": OK")
 }
 
@@ -807,6 +830,10 @@ func (s *Server) runCustomSequence(ctx context.Context, req model.CustomSequence
 		}
 		s.progressStep(i+1, stepName)
 		s.addLog("INFO", "Последовательность "+itoa(i+1)+"/"+itoa(total)+": "+stepName+" (cmd="+itoa(int(step.Cmd))+")")
+		s.recordExecutionFact(orchestrator.JournalRecord{
+			ExecutionID: executionID(ctx), NodeID: "step-" + itoa(i+1), Attempt: 1,
+			CommandIntent: "cmd:" + itoa(int(step.Cmd)), State: "intent",
+		})
 
 		if step.Zone > 0 {
 			s.modbusMu.RLock()
@@ -823,6 +850,10 @@ func (s *Server) runCustomSequence(ctx context.Context, req model.CustomSequence
 		}
 
 		if err := s.modbus.SendCommand(ctx, step.Cmd, timeout); err != nil {
+			s.recordExecutionFact(orchestrator.JournalRecord{
+				ExecutionID: executionID(ctx), NodeID: "step-" + itoa(i+1), Attempt: 1,
+				CommandIntent: "cmd:" + itoa(int(step.Cmd)), Outcome: err.Error(), State: "unknown",
+			})
 			s.addLog("ERROR", "Ошибка шага "+itoa(i+1)+" ("+stepName+"): "+err.Error())
 			s.hub.Broadcast(model.WSEvent{
 				Type: "error",
@@ -833,6 +864,10 @@ func (s *Server) runCustomSequence(ctx context.Context, req model.CustomSequence
 			}
 			return
 		}
+		s.recordExecutionFact(orchestrator.JournalRecord{
+			ExecutionID: executionID(ctx), NodeID: "step-" + itoa(i+1), Attempt: 1,
+			CommandIntent: "cmd:" + itoa(int(step.Cmd)), Outcome: "completed", State: "completed",
+		})
 
 		if step.DelaySec > 0 {
 			s.addLog("INFO", "Задержка шага "+itoa(i+1)+": "+itoa(step.DelaySec)+" сек...")
@@ -845,6 +880,18 @@ func (s *Server) runCustomSequence(ctx context.Context, req model.CustomSequence
 		}
 	}
 	s.addLog("INFO", seqName+": Успешно завершена")
+}
+
+func (s *Server) recordExecutionFact(record orchestrator.JournalRecord) {
+	if s.cfg == nil || s.cfg.AppendExecutionFact == nil {
+		return
+	}
+	if record.ExecutionID == "" {
+		record.ExecutionID = "unscoped"
+	}
+	if err := s.cfg.AppendExecutionFact(record); err != nil {
+		s.addLog("ERROR", "Не удалось записать execution journal: "+err.Error())
+	}
 }
 
 func recoverPanic(program string) {
