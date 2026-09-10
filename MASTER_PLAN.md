@@ -91,6 +91,10 @@ Status: TODO
 - Добавить reusable subgraph definition с входными параметрами и явным
   контрактом выхода; выполнение подграфа допускается только после отдельной
   проверки безопасности Modbus-команд.
+- Реализован Canvas graph connectivity: output → input, fan-out, выбор и
+  удаление связей, сохранение connections в модели алгоритма.
+- Остаются edge-condition editor, полноценный DAG executor и безопасный
+  runtime binding параметров подграфа.
 
 ### RELEASE-001 — внешняя квалификация
 

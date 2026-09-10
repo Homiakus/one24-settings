@@ -139,7 +139,7 @@ window.AutoTraceEditor = (() => {
     nodePositions: {},
     formulaResults: {},
     criticalPathIds: new Set()
-    ,routedEdges: {}, subgraphs: [], parameters: []
+    ,routedEdges: {}, subgraphs: [], parameters: [], connections: [], portSelection: null
   };
 
   function routedPath(edge, fallback) {
@@ -177,6 +177,8 @@ window.AutoTraceEditor = (() => {
       if (subgraphsRaw) state.subgraphs = JSON.parse(subgraphsRaw);
       const paramsRaw = localStorage.getItem('onepap_autotrace_parameters');
       if (paramsRaw) state.parameters = JSON.parse(paramsRaw);
+      const connectionsRaw = localStorage.getItem('onepap_autotrace_connections');
+      if (connectionsRaw) state.connections = JSON.parse(connectionsRaw);
     } catch (e) {
       console.warn('[AutoTrace] State load fallback:', e);
       state.sequence = PRESET_SEQUENCES.sys_check.steps.map(normalizeStep);
@@ -192,6 +194,7 @@ window.AutoTraceEditor = (() => {
       localStorage.setItem('onepap_autotrace_view', state.activeView);
       localStorage.setItem('onepap_autotrace_subgraphs', JSON.stringify(state.subgraphs));
       localStorage.setItem('onepap_autotrace_parameters', JSON.stringify(state.parameters));
+      localStorage.setItem('onepap_autotrace_connections', JSON.stringify(state.connections));
       const O = getO();
       if (O.state) {
         O.state.customSequence = state.sequence;
@@ -297,6 +300,59 @@ window.AutoTraceEditor = (() => {
     renderFlowCanvas();
   }
 
+  function graphConnections() {
+    if (state.connections.length > 0) return state.connections;
+    return state.sequence.slice(0, -1).map((step, index) => ({
+      id: `edge-${step.id}-${state.sequence[index + 1].id}`,
+      from: step.id,
+      to: state.sequence[index + 1].id,
+      condition: state.sequence[index + 1].condition || '',
+      priority: index
+    }));
+  }
+
+  function pruneGraphConnections() {
+    const nodeIDs = new Set(state.sequence.map(step => step.id));
+    state.connections = state.connections.filter(edge => nodeIDs.has(edge.from) && nodeIDs.has(edge.to) && edge.from !== edge.to);
+  }
+
+  function handlePortClick(event, nodeId, direction) {
+    event.stopPropagation();
+    if (direction === 'out') {
+      state.portSelection = { nodeId, direction };
+      getO().toast('Выход выбран. Теперь нажмите вход другого блока.', '');
+      renderFlowCanvas();
+      return;
+    }
+    if (!state.portSelection || state.portSelection.direction !== 'out') {
+      getO().toast('Сначала выберите выходной порт блока.', 'error');
+      return;
+    }
+    const from = state.portSelection.nodeId;
+    if (from === nodeId) {
+      getO().toast('Нельзя соединить блок с самим собой.', 'error');
+      return;
+    }
+    const id = `edge-${from}-${nodeId}`;
+    if (!state.connections.some(edge => edge.id === id)) {
+      state.connections.push({ id, from, to: nodeId, condition: '', priority: state.connections.length });
+      state.routedEdges = {};
+      saveState();
+      getO().toast('Связь добавлена. Для ветвления повторите с другим входом.', 'ok');
+    }
+    state.portSelection = null;
+    renderFlowCanvas();
+  }
+
+  function removeSelectedConnection() {
+    if (!state.portSelection?.edgeId) return;
+    state.connections = state.connections.filter(edge => edge.id !== state.portSelection.edgeId);
+    state.portSelection = null;
+    state.routedEdges = {};
+    saveState();
+    renderFlowCanvas();
+  }
+
   function switchView(viewName) {
     state.activeView = viewName;
     saveState();
@@ -352,6 +408,7 @@ window.AutoTraceEditor = (() => {
     if (!container || !svgLayer || !nodesLayer) return;
 
     evaluateFormulas();
+    pruneGraphConnections();
 
     svgLayer.replaceChildren();
     nodesLayer.replaceChildren();
@@ -369,9 +426,10 @@ window.AutoTraceEditor = (() => {
     nodesLayer.style.transformOrigin = '0 0';
     svgLayer.setAttribute('transform', `translate(${state.panX}, ${state.panY}) scale(${state.zoom})`);
 
-    for (let i = 0; i < state.sequence.length - 1; i++) {
-      const fromStep = state.sequence[i];
-      const toStep = state.sequence[i + 1];
+    graphConnections().forEach((connection, connectionIndex) => {
+      const fromStep = state.sequence.find(step => step.id === connection.from);
+      const toStep = state.sequence.find(step => step.id === connection.to);
+      if (!fromStep || !toStep) return;
       const fromPos = state.nodePositions[fromStep.id] || { x: 0, y: 0 };
       const toPos = state.nodePositions[toStep.id] || { x: 0, y: 0 };
 
@@ -381,18 +439,25 @@ window.AutoTraceEditor = (() => {
       const endY = toPos.y + 90;
 
       const dx = Math.max(40, Math.abs(endX - startX) * 0.5);
-      const edge = { id: `edge-${fromStep.id}-${toStep.id}` };
+      const edge = { id: connection.id };
       const fallback = `M ${startX} ${startY} C ${startX + dx} ${startY}, ${endX - dx} ${endY}, ${endX} ${endY}`;
       const pathData = routedPath(edge, fallback);
 
       const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       path.setAttribute('d', pathData);
       path.setAttribute('fill', 'none');
-      const isExecuting = state.activeExecutingStepIdx === i;
+      const isExecuting = state.activeExecutingStepIdx === connectionIndex;
       path.setAttribute('stroke', isExecuting ? '#3b82f6' : 'var(--line-strong)');
       path.setAttribute('stroke-width', isExecuting ? '3' : '2');
       path.setAttribute('stroke-dasharray', isExecuting ? '6,3' : 'none');
       if (isExecuting) path.classList.add('at-wire-pulse');
+      path.classList.add('at-graph-edge');
+      path.dataset.edgeId = connection.id;
+      path.onclick = (event) => {
+        event.stopPropagation();
+        state.portSelection = { edgeId: connection.id };
+        getO().toast(`Связь выбрана: ${fromStep.name} → ${toStep.name}. Нажмите Delete для удаления.`, '');
+      };
       svgLayer.appendChild(path);
 
       const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
@@ -401,7 +466,7 @@ window.AutoTraceEditor = (() => {
       arrow.setAttribute('r', '4');
       arrow.setAttribute('fill', isExecuting ? '#3b82f6' : 'var(--accent)');
       svgLayer.appendChild(arrow);
-    }
+    });
 
     state.sequence.forEach((step, idx) => {
       const pos = state.nodePositions[step.id] || { x: 60 + idx * 300, y: 80 };
@@ -417,16 +482,19 @@ window.AutoTraceEditor = (() => {
       node.style.top = `${pos.y}px`;
       node.style.borderTopColor = autoMeta.color;
 
-      if (idx > 0) {
+      if (state.sequence.length > 1) {
         const pinIn = document.createElement('div');
         pinIn.className = 'at-port-pin at-port-in';
         pinIn.title = 'Входная связь';
+        pinIn.onclick = (event) => handlePortClick(event, step.id, 'in');
         node.appendChild(pinIn);
       }
-      if (idx < state.sequence.length - 1) {
+      if (state.sequence.length > 1) {
         const pinOut = document.createElement('div');
         pinOut.className = 'at-port-pin at-port-out';
         pinOut.title = 'Выходная связь';
+        pinOut.onclick = (event) => handlePortClick(event, step.id, 'out');
+        if (state.portSelection?.nodeId === step.id && state.portSelection.direction === 'out') pinOut.classList.add('is-selected');
         node.appendChild(pinOut);
       }
 
@@ -713,9 +781,10 @@ window.AutoTraceEditor = (() => {
     if (!svgLayer) return;
     svgLayer.replaceChildren();
 
-    for (let i = 0; i < state.sequence.length - 1; i++) {
-      const fromStep = state.sequence[i];
-      const toStep = state.sequence[i + 1];
+    graphConnections().forEach((connection, connectionIndex) => {
+      const fromStep = state.sequence.find(step => step.id === connection.from);
+      const toStep = state.sequence.find(step => step.id === connection.to);
+      if (!fromStep || !toStep) return;
       const fromPos = state.nodePositions[fromStep.id] || { x: 0, y: 0 };
       const toPos = state.nodePositions[toStep.id] || { x: 0, y: 0 };
 
@@ -725,14 +794,14 @@ window.AutoTraceEditor = (() => {
       const endY = toPos.y + 90;
 
       const dx = Math.max(40, Math.abs(endX - startX) * 0.5);
-      const edge = { id: `edge-${fromStep.id}-${toStep.id}` };
+      const edge = { id: connection.id };
       const fallback = `M ${startX} ${startY} C ${startX + dx} ${startY}, ${endX - dx} ${endY}, ${endX} ${endY}`;
       const pathData = routedPath(edge, fallback);
 
       const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       path.setAttribute('d', pathData);
       path.setAttribute('fill', 'none');
-      const isExecuting = state.activeExecutingStepIdx === i;
+      const isExecuting = state.activeExecutingStepIdx === connectionIndex;
       path.setAttribute('stroke', isExecuting ? '#3b82f6' : 'var(--line-strong)');
       path.setAttribute('stroke-width', isExecuting ? '3' : '2');
       if (isExecuting) path.classList.add('at-wire-pulse');
@@ -744,7 +813,7 @@ window.AutoTraceEditor = (() => {
       arrow.setAttribute('r', '4');
       arrow.setAttribute('fill', isExecuting ? '#3b82f6' : 'var(--accent)');
       svgLayer.appendChild(arrow);
-    }
+    });
   }
 
   function setupCanvasPanZoom() {
@@ -1085,13 +1154,7 @@ window.AutoTraceEditor = (() => {
       command: Number(step.cmd || 0),
       config: { zone: String(step.zone ?? 3), timeout_sec: String(step.timeout_sec || 300), retry_count: String(step.retry_count || 0) }
     }));
-    const edges = state.sequence.slice(0, -1).map((step, index) => ({
-      id: `edge-${step.id}-${state.sequence[index + 1].id}`,
-      from: step.id,
-      to: state.sequence[index + 1].id,
-      condition: state.sequence[index + 1].condition || '',
-      priority: index
-    }));
+    const edges = graphConnections();
     return { id: 'onepap-main-algorithm', nodes, edges, parameters: state.parameters, subgraphs: state.subgraphs };
   }
 
@@ -1141,15 +1204,15 @@ window.AutoTraceEditor = (() => {
           y: position.y,
           width: 280,
           height: 180,
-          inputs: index === 0 ? [] : [{ id: 'in', name: 'Вход', type: 'process', side: 'left' }],
-          outputs: index === state.sequence.length - 1 ? [] : [{ id: 'out', name: 'Выход', type: 'process', side: 'right' }]
+          inputs: [{ id: 'in', name: 'Вход', type: 'process', side: 'left' }],
+          outputs: [{ id: 'out', name: 'Выход', type: 'process', side: 'right' }]
         };
       });
-      const edges = state.sequence.slice(0, -1).map((step, index) => ({
-        id: `edge-${step.id}-${state.sequence[index + 1].id}`,
-        sourceBlockId: step.id,
+      const edges = graphConnections().map(connection => ({
+        id: connection.id,
+        sourceBlockId: connection.from,
         sourcePortId: 'out',
-        targetBlockId: state.sequence[index + 1].id,
+        targetBlockId: connection.to,
         targetPortId: 'in'
       }));
       const result = await O.request('/autotrace/route', {
@@ -1302,6 +1365,15 @@ window.AutoTraceEditor = (() => {
     if (btnRoute) btnRoute.onclick = () => calculateRoutes();
     if (btnValidate) btnValidate.onclick = () => validateAlgorithmModel();
     if (btnSubgraph) btnSubgraph.onclick = () => createSubgraph();
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Delete' && state.portSelection?.edgeId && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) {
+        removeSelectedConnection();
+      }
+      if (event.key === 'Escape' && state.portSelection) {
+        state.portSelection = null;
+        renderFlowCanvas();
+      }
+    });
     if (btnAddStep) btnAddStep.onclick = () => addStep();
     const runSequence = document.getElementById('btn-seq-run');
     if (runSequence) runSequence.addEventListener('click', (event) => {
