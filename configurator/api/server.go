@@ -1,7 +1,9 @@
 package api
 
 import (
+	"context"
 	"embed"
+	"encoding/json"
 	"io/fs"
 	"log"
 	"net/http"
@@ -25,10 +27,11 @@ type Server struct {
 
 // ServerConfig — настройки из main.
 type ServerConfig struct {
-	RateLimitRPS int
-	APIKey       string
-	MaxWSClients int
-	Zone         uint16 // зона по умолчанию (1, 2, или 3)
+	RateLimitRPS      int
+	APIKey            string
+	MaxWSClients      int
+	Zone              uint16 // зона по умолчанию (1, 2, или 3)
+	OrchestratorState func(context.Context) (any, error)
 }
 
 // ServerState — разделяемое состояние с защитой мьютексом.
@@ -41,7 +44,7 @@ type ServerState struct {
 	Connection         model.ConnectionState
 	Program            model.ProgramState
 	Log                []model.LogEntry
-	Zone               uint16    `json:"zone"` // выбранная зона: 1, 2, или 3 (обе)
+	Zone               uint16 `json:"zone"` // выбранная зона: 1, 2, или 3 (обе)
 	startTime          time.Time
 	reagentResume      chan bool // сигнал: true=продолжить, false=отменить
 }
@@ -75,7 +78,16 @@ func (s *Server) routes(uiFS embed.FS) {
 		mb := s.modbus
 		s.modbusMu.RUnlock()
 		connected := mb != nil && mb.Connected()
-		w.Write([]byte(`{"ok":true,"modbus":` + boolStr(connected) + `}`))
+		response := map[string]any{"ok": true, "modbus": connected}
+		if s.cfg != nil && s.cfg.OrchestratorState != nil {
+			state, err := s.cfg.OrchestratorState(r.Context())
+			if err != nil {
+				response["orchestrator_error"] = err.Error()
+			} else {
+				response["orchestrator"] = state
+			}
+		}
+		_ = json.NewEncoder(w).Encode(response)
 	})
 
 	// ─── API v1 ────────────────────────────────────────────────────────────

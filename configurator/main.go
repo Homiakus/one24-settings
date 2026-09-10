@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -107,10 +108,11 @@ func run() error {
 	}
 
 	srvCfg := &api.ServerConfig{
-		RateLimitRPS: cfg.Security.RateLimitPerSec,
-		APIKey:       cfg.Security.APIKey,
-		MaxWSClients: cfg.Security.MaxWSClients,
-		Zone:         uint16(cfg.Modbus.Zone),
+		RateLimitRPS:      cfg.Security.RateLimitPerSec,
+		APIKey:            cfg.Security.APIKey,
+		MaxWSClients:      cfg.Security.MaxWSClients,
+		Zone:              uint16(cfg.Modbus.Zone),
+		OrchestratorState: func(ctx context.Context) (any, error) { return coord.State(ctx) },
 	}
 	srv, err := api.New(mbClient, hub, uiFS, srvCfg)
 	if err != nil {
@@ -125,7 +127,15 @@ func run() error {
 		IdleTimeout:  120 * time.Second,
 	}
 	ctx := context.Background()
-	if err := coord.Dispatch(ctx, orchestrator.Started{PID: os.Getpid(), Address: listenInfo.BoundAddress}); err != nil {
+	event := any(orchestrator.Started{PID: os.Getpid(), Address: listenInfo.BoundAddress})
+	if previous, readErr := os.ReadFile(*runtimeFile); readErr == nil {
+		var prior runtimeInfo
+		if json.Unmarshal(previous, &prior) == nil && prior.PID != 0 && prior.PID != os.Getpid() {
+			event = orchestrator.Recovered{PreviousPID: prior.PID}
+			log.Printf("[main] обнаружен stale runtime-файл от PID=%d; восстановление зафиксировано в Axiom", prior.PID)
+		}
+	}
+	if err := coord.Dispatch(ctx, event); err != nil {
 		return fmt.Errorf("записать запуск в Axiom: %w", err)
 	}
 

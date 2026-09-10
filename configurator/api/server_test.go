@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"embed"
 	"encoding/json"
 	"net/http"
@@ -47,6 +48,27 @@ func TestHealthzEndpoint(t *testing.T) {
 	testutil.AssertNil(t, err, "Декодирование JSON ответа /healthz")
 	testutil.AssertTrue(t, body["ok"], "ok должно быть true")
 	testutil.AssertFalse(t, body["modbus"], "modbus должно быть false (не подключён)")
+}
+
+func TestHealthzIncludesOrchestratorState(t *testing.T) {
+	hub := ws.NewHub()
+	srv, err := New(nil, hub, testUIFS, &ServerConfig{
+		RateLimitRPS: 100,
+		OrchestratorState: func(context.Context) (any, error) {
+			return map[string]any{"phase": "ready", "generation": 3}, nil
+		},
+	})
+	testutil.AssertNil(t, err, "создание сервера")
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	resp, err := ts.Client().Get(ts.URL + "/healthz")
+	testutil.AssertNil(t, err, "GET /healthz")
+	defer resp.Body.Close()
+	var body map[string]any
+	testutil.AssertNil(t, json.NewDecoder(resp.Body).Decode(&body), "декодирование healthz")
+	state, ok := body["orchestrator"].(map[string]any)
+	testutil.AssertTrue(t, ok, "orchestrator должен быть объектом")
+	testutil.AssertEqual(t, state["phase"], "ready", "phase orchestrator")
 }
 
 // TestGetStepsAndPutStep проверяет считывание 11 шагов и обновление конкретного шага через REST API.

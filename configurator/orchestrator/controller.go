@@ -27,6 +27,7 @@ type Started struct {
 	Address string
 }
 type Ready struct{ Address string }
+type Recovered struct{ PreviousPID int }
 type Failed struct {
 	Component string
 	Err       string
@@ -58,6 +59,12 @@ func Open(dir string) (*Controller, error) {
 	})
 	axiom.Handle(flow, func(_ context.Context, s State, e Ready) (axiom.FlowResult[State], error) {
 		s.Phase, s.LastEvent = "ready", "ready"
+		s.Generation++
+		s.UpdatedAt = time.Now().UTC()
+		return axiom.Next(s), nil
+	})
+	axiom.Handle(flow, func(_ context.Context, s State, e Recovered) (axiom.FlowResult[State], error) {
+		s.Phase, s.LastEvent, s.LastError = "starting", "recovered", ""
 		s.Generation++
 		s.UpdatedAt = time.Now().UTC()
 		return axiom.Next(s), nil

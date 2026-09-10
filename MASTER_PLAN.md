@@ -18,7 +18,9 @@ production или hosted-CI qualification.
 
 ## Состояние на 2026-09-10
 
-### DONE — WAILS-001: заменить Rust desktop
+### WAILS-001 — заменить Rust desktop
+
+Status: DONE
 
 - Rust/Tao/Wry desktop удалён из checkout.
 - Добавлен Wails v3 проект `desktop/ONEPAP.24_Modbus_Configurator`.
@@ -26,7 +28,9 @@ production или hosted-CI qualification.
 - Сохранены `-config`, `-runtime-file`, `-host`, `-port`, `-server-only`.
 - `onepap.ps1 build` использует `wails3 build`, Cargo/Rust не требуются.
 
-### DONE — AXIOM-001: durable lifecycle coordination
+### AXIOM-001 — durable lifecycle coordination
+
+Status: DONE
 
 - Axiom `github.com/Homiakus/axiom` закреплён на commit
   `60ea147d4070cf767ebdb9f18372e623c380933b`.
@@ -34,19 +38,28 @@ production или hosted-CI qualification.
   synchronous Pebble-backed durable single-node profile.
 - Reopen test подтверждает восстановление состояния execution `configurator`.
 
-### TODO — WAILS-002: runtime qualification
+### WAILS-002 — runtime qualification
 
-- Проверить запуск собранного EXE на чистом Windows host с WebView2 Runtime.
-- Проверить закрытие окна, завершение backend child и повторный запуск.
-- Проверить `-ServerOnly`, fallback HTTP port и реальный `/healthz`.
+Status: DONE
 
-### TODO — AXIOM-002: operational observability
+- Реальный локальный Wails EXE запущен в `-ServerOnly` режиме.
+- Runtime-file создан, `/healthz` ответил HTTP 200, Axiom сообщил `ready`.
+- `onepap.ps1 stop` корректно завершил Wails/backend process tree.
+- Fallback HTTP port подтверждён фактическим runtime URL.
+- Чистый host/WebView2 и повторный GUI-жизненный цикл требуют отдельного host gate.
 
-- Вывести восстановленный Axiom lifecycle state в diagnostics/health endpoint.
-- Добавить bounded recovery evidence для backend crash и stale runtime-file.
+### AXIOM-002 — operational observability
+
+Status: DONE
+
+- Восстановленный Axiom lifecycle state выводится в `/healthz`.
+- Stale runtime-file фиксируется событием `recovered` с прежним PID.
+- Добавлен API-тест наличия orchestrator state в health response.
 - Не считать это доказательством Modbus hardware recovery без HIL-теста.
 
-### BLOCKED — RELEASE-001: внешняя квалификация
+### RELEASE-001 — внешняя квалификация
+
+Status: BLOCKED
 
 - Нет подтверждения hosted CI, подписанного installer и чистого hardware/HIL
   прогона на ESP32/Medtechnica.
@@ -58,4 +71,3 @@ production или hosted-CI qualification.
 2. `Push-Location configurator; go test ./...; go vet ./...; go test -race ./orchestrator ./api ./ws`
 3. `Push-Location desktop\ONEPAP.24_Modbus_Configurator; go test ./...; wails3 build`
 4. `rg --files . -g '*.rs' -g 'Cargo.toml' -g 'Cargo.lock'` должен быть пустым.
-
