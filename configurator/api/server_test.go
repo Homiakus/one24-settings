@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	core "github.com/Homiakus/autotraceLab/go_engine/core"
 	"modbus-configurator/internal/testutil"
 	"modbus-configurator/model"
 	"modbus-configurator/ws"
@@ -69,6 +70,36 @@ func TestHealthzIncludesOrchestratorState(t *testing.T) {
 	state, ok := body["orchestrator"].(map[string]any)
 	testutil.AssertTrue(t, ok, "orchestrator должен быть объектом")
 	testutil.AssertEqual(t, state["phase"], "ready", "phase orchestrator")
+}
+
+func TestAutoTraceRouteUsesBackendCore(t *testing.T) {
+	srv := newTestServer("")
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	request := core.RouteRequest{
+		GraphID: "onepap-smoke",
+		Nodes: []core.BlockNode{
+			{ID: "source", Title: "Source", X: 0, Y: 0, Width: 120, Height: 80, Outputs: []core.Port{{ID: "out", Name: "out", Type: "data"}}},
+			{ID: "target", Title: "Target", X: 300, Y: 0, Width: 120, Height: 80, Inputs: []core.Port{{ID: "in", Name: "in", Type: "data"}}},
+		},
+		Edges: []core.EdgeConnection{{ID: "edge-1", SourceBlockID: "source", SourcePortID: "out", TargetBlockID: "target", TargetPortID: "in"}},
+	}
+	body, err := json.Marshal(request)
+	testutil.AssertNil(t, err, "кодирование AutoTrace сцены")
+	resp, err := ts.Client().Post(ts.URL+"/api/v1/autotrace/route", "application/json", bytes.NewReader(body))
+	testutil.AssertNil(t, err, "POST /api/v1/autotrace/route")
+	defer resp.Body.Close()
+	testutil.AssertEqual(t, resp.StatusCode, http.StatusOK, "AutoTrace backend route status")
+
+	var response struct {
+		OK   bool             `json:"ok"`
+		Data core.RouteResult `json:"data"`
+	}
+	testutil.AssertNil(t, json.NewDecoder(resp.Body).Decode(&response), "декодирование AutoTrace результата")
+	testutil.AssertTrue(t, response.OK, "AutoTrace ответ должен быть успешным")
+	testutil.AssertEqual(t, response.Data.Engine, core.EngineID, "использован upstream AutoTrace engine")
+	testutil.AssertEqual(t, len(response.Data.Edges), 1, "маршрутизировано одно ребро")
 }
 
 // TestGetStepsAndPutStep проверяет считывание 11 шагов и обновление конкретного шага через REST API.

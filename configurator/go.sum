@@ -2,6 +2,8 @@ github.com/BurntSushi/toml v1.6.0 h1:dRaEfpa2VI55EwlIW72hMRHdWouJeRF7TPYhI+AUQjk
 github.com/BurntSushi/toml v1.6.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
 github.com/DataDog/zstd v1.5.7 h1:ybO8RBeh29qrxIhCA9E8gKY6xfONU9T6G6aP9DTKfLE=
 github.com/DataDog/zstd v1.5.7/go.mod h1:g4AWEaM3yOg3HYfnJ3YIawPnVdXJh9QME85blwSAmyw=
+github.com/Homiakus/autotraceLab/go_engine v0.0.0-20260907192056-ba9613ff534d h1:JBP1eeEzya7YHwdVuMA79IIkscn91JWV4+VotUVpSaY=
+github.com/Homiakus/autotraceLab/go_engine v0.0.0-20260907192056-ba9613ff534d/go.mod h1:W7Moo9o9t3bs+cwOUvRCxl9zh5pVA0rV+cmCXdduaQc=
 github.com/Homiakus/axiom v0.0.0-20260909100653-60ea147d4070 h1:4GtUjeL5g5km1CcNkiAUm2CP+AU7ep1pv2wAA07Ej7c=
 github.com/Homiakus/axiom v0.0.0-20260909100653-60ea147d4070/go.mod h1:5kH/3lMPb+MdmNBVBO0P9wMntHgHFRydqCPihmBhBUI=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=

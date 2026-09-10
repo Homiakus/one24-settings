@@ -57,6 +57,20 @@ Status: DONE
 - Добавлен API-тест наличия orchestrator state в health response.
 - Не считать это доказательством Modbus hardware recovery без HIL-теста.
 
+### AUTOTRACE-001 — backend routing integration
+
+Status: DONE
+
+- Обновлён upstream AutoTrace Lab до commit `ba9613ff534d`.
+- Go core подключён как versioned dependency и используется через
+  `POST /api/v1/autotrace/route`.
+- Backend выполняет scene validation, context timeout и deterministic routing;
+  браузер получает рассчитанные пути и отображает их в Canvas.
+- Добавлены API-тест и UI-кнопка «Рассчитать трассы»; Modbus execution contract
+  не изменён.
+- Результат локально проверен через `go test ./...`; hardware/visual host gate
+  остаётся отдельным доказательством.
+
 ### RELEASE-001 — внешняя квалификация
 
 Status: BLOCKED

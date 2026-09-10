@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	github.com/BurntSushi/toml v1.6.0
+	github.com/Homiakus/autotraceLab/go_engine v0.0.0-20260907192056-ba9613ff534d
 	github.com/Homiakus/axiom v0.0.0-20260909100653-60ea147d4070
 	github.com/goburrow/modbus v0.1.0
 	github.com/gorilla/websocket v1.5.3
