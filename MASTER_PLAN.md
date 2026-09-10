@@ -266,6 +266,128 @@ Prerequisites: MATH-001, RUNTIME-001, AXIOM-003, RESOURCE-001
 - Разделять local PASS от HIL/hosted-CI/production evidence; не продвигать
   release без аппаратного подтверждения.
 
+### PRODUCT-001 — разделение Studio и Operator без дублирования ядра
+
+Status: TODO
+
+Priority: P0
+
+Prerequisites: CONTRACT-001, RUNTIME-001
+
+- Разделить приложение на два функциональных режима поверх одного Go/Wails
+  backend и одного runtime: `Algorithm Studio` для разработки и `Machine
+  Control` для эксплуатации.
+- Запретить создание второй бизнес-логики: оба режима используют общий
+  `AlgorithmDefinition`, command registry, validator, compiler, executor,
+  Axiom journal, machine state и WebSocket events.
+- Зафиксировать границу данных: Studio работает с `Draft`, `Validated`,
+  `Simulated`, `Published`; Operator получает только immutable
+  `Published/Approved` snapshot с digest и revision.
+- Определить capability boundary: Studio может редактировать граф и запускать
+  симуляцию; Operator может выбирать опубликованный рецепт, запускать,
+  приостанавливать, продолжать и безопасно останавливать execution, но не
+  может менять граф или отправлять произвольный Modbus command.
+- Выбрать один Wails binary с двумя frontend routes/profiles и отдельными
+  capability tokens вместо двух разошедшихся приложений; для production
+  разрешать только Operator UI.
+- Gate: обе UI используют один API-контракт, Operator не видит draft и не
+  получает endpoint редактирования, Studio не может обходить runtime и писать
+  в Modbus напрямую.
+
+### STUDIO-001 — Algorithm Studio: редактор, симулятор и публикация
+
+Status: TODO
+
+Priority: P0
+
+Prerequisites: PRODUCT-001, GRAPH-001, MATH-001
+
+- Выделить отдельный Studio navigation и компоненты: graph canvas, palette
+  блоков, property inspector, edge-condition editor, subgraph editor,
+  parameter bindings, validation panel и execution preview.
+- Поддержать типы блоков `command`, `condition`, `variant`, `subgraph`,
+  `checkpoint`, `parallel_join` и bounded `loop`; для каждого блока показывать
+  входы, выходы, параметры, ресурсы и безопасную стратегию recovery.
+- Добавить операции create/connect/disconnect/clone/delete, undo/redo,
+  copy/paste, zoom/pan и сохранение draft с optimistic revision check.
+- Реализовать подграфы с формальными входами/выходами, типизированными
+  параметрами, default values, required values, mapping call-site и запретом
+  рекурсивных вызовов.
+- Добавить статический validation report с ошибками, предупреждениями,
+  affected nodes, resource conflicts, unreachable branches и unknown paths.
+- Добавить simulator без Modbus I/O с trace по узлам, условиям, параметрам,
+  времени, ресурсам и fault-injection сценариям.
+- Публиковать только graph revision, прошедшую validation и обязательную
+  simulation policy; публикация должна быть атомарной и сохранять provenance.
+- Gate: round-trip draft, визуальная проверка Studio, negative tests для
+  invalid graph/bindings и доказательство отсутствия physical I/O в simulation.
+
+### OPERATOR-001 — Machine Control: меню и пошаговое выполнение
+
+Status: TODO
+
+Priority: P0
+
+Prerequisites: PRODUCT-001, AXIOM-003, RESOURCE-001
+
+- Построить Operator navigation вокруг операций аппарата: System Check,
+  Load, Sedimentation, Stain, Wash, Drain и пользовательские опубликованные
+  recipes.
+- Генерировать меню и пошаговое представление из metadata опубликованного
+  алгоритма, а не поддерживать отдельный список команд в JavaScript.
+- Показывать оператору только существенную модель: текущий шаг, прогресс,
+  ожидаемое условие, оставшееся время, выбранную зону, реагент, sensor state,
+  предупреждение и требуемое подтверждение.
+- Реализовать состояния execution `idle`, `preflight`, `running`, `waiting`,
+  `paused`, `failed`, `recovering`, `completed`, `quarantined` с понятным
+  переходом и причиной.
+- Дать оператору только безопасные действия: start, pause, resume, safe stop,
+  acknowledge и recovery decision; скрыть graph editing, raw register writes,
+  arbitrary command execution и draft selection.
+- При restart восстанавливать экран из Axiom execution snapshot; не запускать
+  повторно команду с неизвестным external effect, а показывать quarantine и
+  процедуру подтверждения.
+- Gate: реальный process smoke с Wails/HTTP/WebSocket, operator journey по
+  System Check и Stain, запрет опасных endpoint-ов и recovery после перезапуска.
+
+### PUBLISH-001 — жизненный цикл алгоритма и совместимость версий
+
+Status: TODO
+
+Priority: P1
+
+Prerequisites: CONTRACT-001, PRODUCT-001, STUDIO-001, OPERATOR-001
+
+- Ввести сущности `AlgorithmDraft`, `AlgorithmRevision`, `PublishedAlgorithm`
+  и `ExecutionSnapshot`; draft не должен изменяться после публикации.
+- Проверять совместимость command registry, schema version, firmware
+  capability и resource model до публикации и до запуска.
+- Хранить digest графа, compiled plan digest, author, timestamp, source,
+  simulation evidence, validation evidence и changelog.
+- Разрешить rollback только на ранее опубликованную совместимую revision;
+  нельзя подменять revision во время уже запущенного execution.
+- Gate: публикация invalid/draft algorithm отклоняется, запуск старой revision
+  после редактирования draft остаётся детерминированным, rollback покрыт
+  integration tests.
+
+### SECURITY-001 — профили доступа и безопасная поверхность API
+
+Status: TODO
+
+Priority: P1
+
+Prerequisites: PRODUCT-001, PUBLISH-001, API-001
+
+- Разделить capability scopes: `studio.read`, `studio.edit`, `studio.simulate`,
+  `studio.publish`, `operator.read`, `operator.execute`, `operator.recover`,
+  `diagnostics.service`.
+- Проверять scope на backend endpoint, а не только скрывать кнопки в UI.
+- Разнести API на namespaces `/api/v1/studio/*`, `/api/v1/operator/*`,
+  `/api/v1/executions/*` и `/api/v1/diagnostics/*`.
+- Исключить из Operator API raw Modbus writes и импорт неподтверждённого draft.
+- Gate: endpoint authorization matrix, negative tests с каждым scope и
+  production profile, в котором Studio capabilities отсутствуют.
+
 ### RELEASE-001 — внешняя квалификация
 
 Status: BLOCKED
