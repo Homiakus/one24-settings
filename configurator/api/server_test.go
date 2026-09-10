@@ -5,6 +5,7 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	core "github.com/Homiakus/autotraceLab/go_engine/core"
 	"modbus-configurator/internal/testutil"
 	"modbus-configurator/model"
+	"modbus-configurator/orchestrator"
 	"modbus-configurator/ws"
 )
 
@@ -70,6 +72,20 @@ func TestHealthzIncludesOrchestratorState(t *testing.T) {
 	state, ok := body["orchestrator"].(map[string]any)
 	testutil.AssertTrue(t, ok, "orchestrator должен быть объектом")
 	testutil.AssertEqual(t, state["phase"], "ready", "phase orchestrator")
+}
+
+func TestRecordExecutionFactFailsClosedWhenJournalUnavailable(t *testing.T) {
+	srv, err := New(nil, ws.NewHub(), testUIFS, &ServerConfig{
+		AppendExecutionFact: func(orchestrator.JournalRecord) error {
+			return errors.New("journal unavailable")
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.recordExecutionFact(orchestrator.JournalRecord{State: "intent"}); err == nil {
+		t.Fatal("journal failure was silently accepted")
+	}
 }
 
 func TestAutoTraceRouteUsesBackendCore(t *testing.T) {

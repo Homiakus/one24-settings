@@ -658,16 +658,19 @@ func (s *Server) runSimpleCmd(ctx context.Context, cmd uint16, program, label st
 	s.setProgram(program, 1, 1, label, "running")
 	defer s.clearProgram()
 	s.addLog("INFO", label)
-	s.recordExecutionFact(orchestrator.JournalRecord{
+	if err := s.recordExecutionFact(orchestrator.JournalRecord{
 		ExecutionID: executionID(ctx), NodeID: program, Attempt: 1,
 		CommandIntent: "cmd:" + itoa(int(cmd)), State: "intent",
-	})
+	}); err != nil {
+		s.addLog("ERROR", label+": execution intent не зафиксирован: "+err.Error())
+		return
+	}
 	timeout := 300 * time.Second
 	if cmd == modbus.CmdSedimentation {
 		timeout = 600 * time.Second
 	}
 	if err := s.modbus.SendCommand(ctx, cmd, timeout); err != nil {
-		s.recordExecutionFact(orchestrator.JournalRecord{
+		_ = s.recordExecutionFact(orchestrator.JournalRecord{
 			ExecutionID: executionID(ctx), NodeID: program, Attempt: 1,
 			CommandIntent: "cmd:" + itoa(int(cmd)), Outcome: err.Error(), State: "unknown",
 		})
@@ -678,7 +681,7 @@ func (s *Server) runSimpleCmd(ctx context.Context, cmd uint16, program, label st
 		})
 		return
 	}
-	s.recordExecutionFact(orchestrator.JournalRecord{
+	_ = s.recordExecutionFact(orchestrator.JournalRecord{
 		ExecutionID: executionID(ctx), NodeID: program, Attempt: 1,
 		CommandIntent: "cmd:" + itoa(int(cmd)), Outcome: "completed", State: "completed",
 	})
@@ -830,10 +833,13 @@ func (s *Server) runCustomSequence(ctx context.Context, req model.CustomSequence
 		}
 		s.progressStep(i+1, stepName)
 		s.addLog("INFO", "Последовательность "+itoa(i+1)+"/"+itoa(total)+": "+stepName+" (cmd="+itoa(int(step.Cmd))+")")
-		s.recordExecutionFact(orchestrator.JournalRecord{
+		if err := s.recordExecutionFact(orchestrator.JournalRecord{
 			ExecutionID: executionID(ctx), NodeID: "step-" + itoa(i+1), Attempt: 1,
 			CommandIntent: "cmd:" + itoa(int(step.Cmd)), State: "intent",
-		})
+		}); err != nil {
+			s.addLog("ERROR", "Шаг "+itoa(i+1)+": execution intent не зафиксирован: "+err.Error())
+			return
+		}
 
 		if step.Zone > 0 {
 			s.modbusMu.RLock()
@@ -882,16 +888,17 @@ func (s *Server) runCustomSequence(ctx context.Context, req model.CustomSequence
 	s.addLog("INFO", seqName+": Успешно завершена")
 }
 
-func (s *Server) recordExecutionFact(record orchestrator.JournalRecord) {
+func (s *Server) recordExecutionFact(record orchestrator.JournalRecord) error {
 	if s.cfg == nil || s.cfg.AppendExecutionFact == nil {
-		return
+		return nil
 	}
 	if record.ExecutionID == "" {
 		record.ExecutionID = "unscoped"
 	}
 	if err := s.cfg.AppendExecutionFact(record); err != nil {
-		s.addLog("ERROR", "Не удалось записать execution journal: "+err.Error())
+		return err
 	}
+	return nil
 }
 
 func recoverPanic(program string) {
